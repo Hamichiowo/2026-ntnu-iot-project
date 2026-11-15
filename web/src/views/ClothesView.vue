@@ -43,6 +43,20 @@
         <button type="submit">查詢</button>
         <span class="range-hint">台北時間，最長 24 小時</span>
       </form>
+      <form class="export-panel" @submit.prevent="downloadCsv">
+        <div class="export-title">
+          <strong>匯出 CSV</strong>
+          <span>原始每秒資料（不平均），台北時間，最長 {{ EXPORT_MAX_DAYS }} 天。也可以直接在下方曲線上按住拖曳選取時段。</span>
+        </div>
+        <label>開始<input v-model="exportStart" type="datetime-local" step="1" required aria-label="匯出開始時間（台北）" /></label>
+        <label>結束<input v-model="exportEnd" type="datetime-local" step="1" required aria-label="匯出結束時間（台北）" /></label>
+        <div class="export-actions">
+          <button type="button" class="secondary" @click="useChartRange">使用目前圖表範圍</button>
+          <button v-if="selection" type="button" class="secondary" @click="zoomToSelection">放大檢視選取範圍</button>
+          <button type="submit" :disabled="exporting">{{ exporting ? '匯出中…' : '下載 CSV' }}</button>
+        </div>
+        <p v-if="exportMessage" class="export-message" :class="{ error: exportFailed }" role="status">{{ exportMessage }}</p>
+      </form>
       <p v-if="rangeError" class="notice error" role="alert">{{ rangeError }}</p>
       <p v-if="historyError" class="notice error" role="alert">{{ historyError }}</p>
       <p v-if="truncated" class="notice">資料較多，目前顯示最近 5,000 筆。</p>
@@ -53,7 +67,7 @@
       </div>
       <article v-for="sensor in sensors" v-else :key="sensor.key" class="chart-card">
         <div class="chart-title"><h3><i :style="{ background: sensor.color }"></i>{{ sensor.title }}</h3><span>{{ sensor.key }} · 原始計數</span></div>
-        <div class="chart"><Line :data="chartData(sensor)" :options="chartOptions" /></div>
+        <div class="chart" title="按住拖曳可選取匯出時段"><Line :data="chartDatasets[sensor.key]":options="chartOptions" :plugins="[selectPlugin]" /></div>
       </article>
       <div class="history-footer">
         {{ formatTime(range.start.toISOString()) }} – {{ formatTime(range.end.toISOString()) }} ·
@@ -66,9 +80,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { Line } from 'vue-chartjs';
-import { Chart as ChartJS, LinearScale, PointElement, LineElement, Tooltip, Legend, type ChartOptions } from 'chart.js';
+import { Chart as ChartJS, LinearScale, PointElement, LineElement, Tooltip, Legend, type ChartOptions, type Plugin } from 'chart.js';
 
 ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend);
 type Field = 'hx711_raw' | 'ads1115_raw' | 'touch_raw';
@@ -108,8 +122,102 @@ const refreshSeconds = computed(() => Number(mode.value) > 60 ? 30 : 5);
 
 // <input type="datetime-local"> has no zone; the page shows Taipei time, so read/write it as UTC+8.
 const TAIPEI_MS = 8 * 60 * 60000;
-const toTaipeiInput = (date: Date) => new Date(date.getTime() + TAIPEI_MS).toISOString().slice(0, 16);
-const fromTaipeiInput = (value: string) => new Date(`${value}:00+08:00`);
+const toTaipeiInput = (date: Date, seconds = false) => new Date(date.getTime() + TAIPEI_MS).toISOString().slice(0, seconds ? 19 : 16);
+// Browsers give "YYYY-MM-DDTHH:mm" or, with step="1", "YYYY-MM-DDTHH:mm:ss".
+const fromTaipeiInput = (value: string) => new Date(`${value.length === 16 ? `${value}:00` : value}+08:00`);
+
+// CSV export: own start/end so exporting never changes what the charts show.
+const EXPORT_MAX_DAYS = 7;
+const exportStart = ref(toTaipeiInput(range.value.start, true));
+const exportEnd = ref(toTaipeiInput(range.value.end, true));
+const exporting = ref(false);
+const exportMessage = ref('');
+const exportFailed = ref(false);
+const setExportRange = (start: Date, end: Date) => {
+  exportStart.value = toTaipeiInput(start, true); exportEnd.value = toTaipeiInput(end, true);
+};
+function useChartRange() {
+  setExportRange(range.value.start, range.value.end);
+  exportFailed.value = false; exportMessage.value = '已套用目前圖表的時間範圍。';
+}
+const exportNotice = (text: string, failed = false) => { exportMessage.value = text; exportFailed.value = failed; };
+
+async function downloadCsv() {
+  const start = fromTaipeiInput(exportStart.value), end = fromTaipeiInput(exportEnd.value);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return exportNotice('請輸入開始與結束時間。', true);
+  if (start >= end) return exportNotice('結束時間必須晚於開始時間。', true);
+  if (end.getTime() - start.getTime() > EXPORT_MAX_DAYS * DAY_MS) return exportNotice(`一次最多匯出 ${EXPORT_MAX_DAYS} 天。`, true);
+  exporting.value = true; exportNotice('');
+  try {
+    const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString() });
+    const response = await fetch(`/api/v1/clothes/export?${params}`, { cache: 'no-store' });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new Error(data?.error || `HTTP ${response.status}`);
+    }
+    const blob = await response.blob();
+    const text = await blob.text();
+    let rows = -1;  // the header line is not a reading
+    for (let at = text.indexOf('\n'); at !== -1; at = text.indexOf('\n', at + 1)) rows++;
+    if (rows <= 0) return exportNotice('這段時間沒有資料，未下載檔案。', true);
+    const name = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? 'clothes_raw.csv';
+    const url = URL.createObjectURL(blob);
+    const link = Object.assign(document.createElement('a'), { href: url, download: name });
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    exportNotice(`已下載 ${name}（${rows.toLocaleString()} 筆）。`);
+  } catch (err) {
+    exportNotice(`匯出失敗：${(err as Error).message}`, true);
+  } finally { exporting.value = false; }
+}
+
+// Drag across any chart to pick an export range; the shaded band is drawn on all three charts.
+const selection = ref<{ start: number; end: number } | null>(null);
+const charts = new Set<ChartJS>();
+let dragAnchor: number | null = null;
+const selectPlugin: Plugin<'line'> = {
+  id: 'rangeSelect',
+  afterInit: (chart) => { charts.add(chart as ChartJS); },
+  afterDestroy: (chart) => { charts.delete(chart as ChartJS); },
+  afterEvent(chart, args) {
+    const event = args.event;
+    // chart.update() replays the last event; acting on it would re-select and loop forever.
+    if (args.replay || event.x == null) return;
+    const area = chart.chartArea;
+    const value = chart.scales.x.getValueForPixel(Math.min(Math.max(event.x, area.left), area.right)) as number;
+    if (event.type === 'mousedown') { dragAnchor = value; selection.value = null; return; }
+    if (dragAnchor === null) return;
+    const picked = { start: Math.min(dragAnchor, value), end: Math.max(dragAnchor, value) };
+    if (event.type === 'mousemove') selection.value = picked;
+    else if (event.type === 'mouseup' || event.type === 'mouseout') {
+      dragAnchor = null;
+      if (picked.end - picked.start < 1000) { selection.value = null; return; }  // a click, not a drag
+      selection.value = picked;
+      setExportRange(new Date(picked.start), new Date(picked.end));
+      exportNotice(`已從圖表選取 ${formatTime(new Date(picked.start).toISOString())} – ${formatTime(new Date(picked.end).toISOString())}，可直接下載。`);
+    }
+  },
+  beforeDatasetsDraw(chart) {
+    if (!selection.value) return;
+    const { ctx, chartArea: area, scales: { x } } = chart;
+    const left = Math.max(area.left, x.getPixelForValue(selection.value.start));
+    const right = Math.min(area.right, x.getPixelForValue(selection.value.end));
+    if (right <= left) return;
+    ctx.save(); ctx.fillStyle = 'rgba(40, 116, 78, 0.12)'; ctx.fillRect(left, area.top, right - left, area.bottom - area.top); ctx.restore();
+  },
+};
+watch(selection, () => charts.forEach((chart) => chart.draw()));
+
+async function zoomToSelection() {
+  const picked = selection.value;
+  if (!picked) return;
+  if (picked.end - picked.start > DAY_MS) return exportNotice('選取範圍超過 24 小時，無法放大檢視，但仍可匯出。', true);
+  mode.value = 'custom';
+  await nextTick();  // let the mode watcher fill its defaults first, then override them
+  customStart.value = toTaipeiInput(new Date(picked.start));
+  customEnd.value = toTaipeiInput(new Date(picked.end + 59999));  // round the end up to the whole minute
+  applyCustom();
+}
 const controllers = new Set<AbortController>();
 
 const connectionClass = computed(() => error.value || ingestionError.value ? 'failed' : !latest.value || stale.value || !mqttConnected.value ? 'waiting' : 'live');
@@ -144,6 +252,9 @@ function chartData(sensor: Sensor) {
     borderWidth: 2, pointRadius: records.value.length === 1 ? 3 : 0, pointHitRadius: 8, spanGaps: false, tension: 0 }] };
 }
 
+// Built once per data change, so typing in the export form or dragging never rebuilds the charts.
+const chartDatasets = computed(() => Object.fromEntries(sensors.map((sensor) => [sensor.key, chartData(sensor)])) as Record<Field, ReturnType<typeof chartData>>);
+
 // Round tick spacing (whole minutes/hours) so labels read 10:00, 12:00 … rather than 10:26.
 // Taipei is a whole-hour UTC offset, so multiples of these steps fall on round local times.
 const TICK_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 240, 360].map((m) => m * 60000);
@@ -153,6 +264,7 @@ const tickStep = (spanMs: number) => TICK_STEPS.find((step) => spanMs / step <= 
 const chartOptions = computed<ChartOptions<'line'>>(() => ({
   responsive: true, maintainAspectRatio: false, animation: false,
   interaction: { mode: 'nearest', intersect: false },
+  events: ['mousemove', 'mouseout', 'mousedown', 'mouseup', 'click', 'touchstart', 'touchmove'],
   plugins: { legend: { display: false }, tooltip: { callbacks: {
     title: (items) => items.length && items[0].parsed.x != null ? formatTime(new Date(items[0].parsed.x).toISOString()) : '',
   } } },
@@ -261,6 +373,16 @@ select, .custom-range input { border: 1px solid #d6e0d8; padding: 8px 12px; bord
 .custom-range button { border: 0; border-radius: 7px; padding: 9px 18px; background: #28744e; color: white; font: inherit; font-size: 13px; cursor: pointer; }
 .custom-range button:hover { background: #1f5f3f; }
 .range-hint { font-size: 12px; color: #7b887e; }
+.export-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; padding: 14px 16px; background: #fff; border: 1px solid #dfe7e0; border-radius: 10px; }
+.export-title { width: 100%; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.export-title strong { font-size: 14px; }.export-title span { font-size: 12px; color: #7b887e; }
+.export-panel input { border: 1px solid #d6e0d8; padding: 8px 12px; border-radius: 7px; color: #345142; background: white; font: inherit; }
+.export-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.export-actions button { border: 0; border-radius: 7px; padding: 9px 18px; background: #28744e; color: white; font: inherit; font-size: 13px; cursor: pointer; }
+.export-actions button:hover { background: #1f5f3f; }.export-actions button:disabled { background: #93b3a2; cursor: wait; }
+.export-actions button.secondary { background: #edf3ee; color: #28744e; }.export-actions button.secondary:hover { background: #dfeae2; }
+.export-message { width: 100%; font-size: 12px; color: #28744e; }.export-message.error { color: #9b4641; }
+.chart { cursor: crosshair; user-select: none; }
 .chart-card { background: #fff; border: 1px solid #dfe7e0; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
 .chart-title { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; }
 h3 { font-size: 14px; display: flex; gap: 8px; align-items: center; }h3 i { width: 8px; height: 8px; border-radius: 50%; }
@@ -268,5 +390,5 @@ h3 { font-size: 14px; display: flex; gap: 8px; align-items: center; }h3 i { widt
 .history-footer, .page-note { color: #7b887e; font-size: 12px; }.page-note { margin-top: 26px; border-top: 1px solid #e0e6df; padding-top: 18px; }
 .empty-state { border: 1px dashed #cbd8cf; border-radius: 12px; padding: 70px 20px; text-align: center; background: #f7faf6; }.empty-state p { font-size: 13px; color: #7b887e; margin-top: 10px; }
 .notice { padding: 12px 16px; background: #faf2df; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }.notice.error { background: #fff0ed; color: #9b4641; }
-@media (max-width: 800px) { .intro { align-items: flex-start; flex-direction: column; gap: 14px; }.reading-grid { grid-template-columns: 1fr; }.value { font-size: 32px; }.history-heading { align-items: flex-start; flex-direction: column; }.clothes-page { padding: 24px 16px; }h1 span { display: block; margin: 4px 0 0; }.chart-title span { font-size: 10px; }.custom-range label { width: 100%; justify-content: space-between; }.custom-range input { flex: 1; min-width: 0; } }
+@media (max-width: 800px) { .intro { align-items: flex-start; flex-direction: column; gap: 14px; }.reading-grid { grid-template-columns: 1fr; }.value { font-size: 32px; }.history-heading { align-items: flex-start; flex-direction: column; }.clothes-page { padding: 24px 16px; }h1 span { display: block; margin: 4px 0 0; }.chart-title span { font-size: 10px; }.custom-range label { width: 100%; justify-content: space-between; }.custom-range input { flex: 1; min-width: 0; }.export-panel label { width: 100%; justify-content: space-between; }.export-panel input { flex: 1; min-width: 0; }.export-actions, .export-actions button { width: 100%; } }
 </style>

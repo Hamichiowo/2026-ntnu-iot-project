@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { parseClothesRaw } from '../src/clothes/validation';
 import { ingestClothesRaw } from '../src/clothes/ingest';
 import { clothesRoute } from '../src/routes/clothes';
-import { historyBucketSeconds } from '../src/clothes/store';
+import { CSV_HEADER, clothesCsvLine, historyBucketSeconds } from '../src/clothes/store';
 
 const raw = { hx711_raw: -1500, ads1115_raw: 7799, touch_raw: 31875 };
 describe('Clothes MQTT contract', () => {
@@ -38,6 +38,19 @@ describe('Clothes MQTT contract', () => {
     for (const seconds of [6 * 3600, 24 * 3600, 7777]) {
       expect(seconds / historyBucketSeconds(start, at(seconds), 5000)).toBeLessThanOrEqual(5000);
     }
+  });
+  it('writes CSV lines in Taipei and UTC time with empty cells for failed reads', () => {
+    expect(CSV_HEADER).toBe('time_taipei,timestamp_utc,hx711_raw,ads1115_raw,touch_raw\n');
+    expect(clothesCsvLine({ id: '1', timestamp: new Date('2026-11-13T17:15:53.250Z'), hx711_raw: -1500, ads1115_raw: null, touch_raw: 0 }))
+      .toBe('2026-11-14 01:15:53.250,2026-11-13T17:15:53.250Z,-1500,,0\n');
+  });
+  it('requires a closed export range of at most 7 days', async () => {
+    const app = new Hono().route('/clothes', clothesRoute);
+    for (const query of ['', 'start=2026-01-01', 'end=2026-01-01', 'start=bad&end=2026-01-02',
+      'start=2026-01-02&end=2026-01-01', 'start=2026-01-01&end=2026-01-01', 'start=2026-01-01&end=2026-01-09']) {
+      expect((await app.request(`/clothes/export?${query}`)).status).toBe(400);
+    }
+    expect((await app.request('/clothes/export?start=2026-01-01&end=2026-01-08')).status).toBe(503);
   });
   it('bounds and validates history queries before hitting the database', async () => {
     const app = new Hono().route('/clothes', clothesRoute);
