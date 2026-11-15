@@ -47,6 +47,38 @@ export function historyBucketSeconds(start: Date, end: Date, limit: number) {
   return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 1000 / limit));
 }
 
+export const CSV_HEADER = 'time_taipei,timestamp_utc,hx711_raw,ads1115_raw,touch_raw\n';
+export type CsvRow = { id: string; timestamp: Date | string; hx711_raw: number | null; ads1115_raw: number | null; touch_raw: number | null };
+const TAIPEI_MS = 8 * 60 * 60000;
+const csvValue = (value: number | null) => value === null ? '' : String(value);
+
+// One CSV line per raw reading; time_taipei is what the dashboard shows, timestamp_utc is exact.
+export function clothesCsvLine(row: CsvRow) {
+  const time = new Date(row.timestamp);
+  const taipei = new Date(time.getTime() + TAIPEI_MS).toISOString().replace('T', ' ').slice(0, 23);
+  return `${taipei},${time.toISOString()},${csvValue(row.hx711_raw)},${csvValue(row.ads1115_raw)},${csvValue(row.touch_raw)}\n`;
+}
+
+// Raw (never averaged) rows in time order, read in pages so a week of 1 Hz data is not held in memory.
+export async function* clothesExportRows(start: Date, end: Date, pageSize = 5000) {
+  const sql = database();
+  let after: { timestamp: Date | string; id: string } | null = null;
+  while (true) {
+    const rows: CsvRow[] = after
+      ? await sql`
+        SELECT id::text, timestamp, hx711_raw, ads1115_raw, touch_raw FROM clothes_raw
+        WHERE timestamp <= ${end} AND (timestamp, id) > (${new Date(after.timestamp)}, ${after.id}::bigint)
+        ORDER BY timestamp, id LIMIT ${pageSize}`
+      : await sql`
+        SELECT id::text, timestamp, hx711_raw, ads1115_raw, touch_raw FROM clothes_raw
+        WHERE timestamp >= ${start} AND timestamp <= ${end}
+        ORDER BY timestamp, id LIMIT ${pageSize}`;
+    yield rows;
+    if (rows.length < pageSize) return;
+    after = rows[rows.length - 1];
+  }
+}
+
 export async function clothesHistory(start: Date, end: Date, limit: number) {
   const sql = database();
   const rows = await sql`

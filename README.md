@@ -59,6 +59,7 @@ Topic：`clothes/raw`。每秒一筆，QoS 0、retain=false，斷線不補傳歷
 
 - `GET /api/v1/clothes/latest`：最新一筆、資料年齡、MQTT 狀態。
 - `GET /api/v1/clothes/history?start=<ISO時間>&end=<ISO時間>&limit=5000`：時間範圍內資料，按時間遞增；最多查 24 小時；資料超過 limit 筆時，改回傳每 `bucket_seconds` 秒的平均值，讓整段範圍都看得到（全為 null 的區間仍為 null）。
+- `GET /api/v1/clothes/export?start=<ISO時間>&end=<ISO時間>`：下載時間範圍內的原始資料 CSV（不平均，UTF-8 含 BOM，Excel 可直接開）；start、end 皆必填，最長 7 天。欄位：`time_taipei,timestamp_utc,hx711_raw,ads1115_raw,touch_raw`，讀取失敗的值為空白。儀表板「匯出 CSV」區可手動填起訖時間，或在曲線上按住拖曳選取時段後直接下載。
 - DB 無法讀取時回傳 503，不以假資料或記憶體資料冒充成功。
 
 PostgreSQL 使用 Docker volume，重新啟動會保留資料。不要執行 `docker compose down -v`，那會刪除本專案的資料 volume。
