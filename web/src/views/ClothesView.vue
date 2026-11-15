@@ -46,13 +46,14 @@
       <form class="export-panel" @submit.prevent="downloadCsv">
         <div class="export-title">
           <strong>匯出 CSV</strong>
-          <span>原始每秒資料（不平均），台北時間，最長 {{ EXPORT_MAX_DAYS }} 天。也可以直接在下方曲線上按住拖曳選取時段。</span>
+          <span>原始每秒資料（不平均），台北時間，最長 {{ EXPORT_MAX_DAYS }} 天。也可以在下方曲線上按住拖曳選取時段，再拖曳兩側直線微調。</span>
         </div>
         <label>開始<input v-model="exportStart" type="datetime-local" step="1" required aria-label="匯出開始時間（台北）" /></label>
         <label>結束<input v-model="exportEnd" type="datetime-local" step="1" required aria-label="匯出結束時間（台北）" /></label>
         <div class="export-actions">
           <button type="button" class="secondary" @click="useChartRange">使用目前圖表範圍</button>
           <button v-if="selection" type="button" class="secondary" @click="zoomToSelection">放大檢視選取範圍</button>
+          <button v-if="selection" type="button" class="secondary" @click="clearSelection">清除選取</button>
           <button type="submit" :disabled="exporting">{{ exporting ? '匯出中…' : '下載 CSV' }}</button>
         </div>
         <p v-if="exportMessage" class="export-message" :class="{ error: exportFailed }" role="status">{{ exportMessage }}</p>
@@ -172,9 +173,15 @@ async function downloadCsv() {
 }
 
 // Drag across any chart to pick an export range; the shaded band is drawn on all three charts.
+// Once picked, the start and end lines have handles that can be dragged to adjust either side.
 const selection = ref<{ start: number; end: number } | null>(null);
 const charts = new Set<ChartJS>();
-let dragAnchor: number | null = null;
+let dragAnchor: number | null = null;  // the side that stays put while the other follows the pointer
+let resizing = false;
+let lastPointer: number | null = null;
+const SELECT_COLOR = '#28744e';
+const pickedText = (picked: { start: number; end: number }) =>
+  `${formatTime(new Date(picked.start).toISOString())} – ${formatTime(new Date(picked.end).toISOString())}`;
 const selectPlugin: Plugin<'line'> = {
   id: 'rangeSelect',
   afterInit: (chart) => { charts.add(chart as ChartJS); },
@@ -182,19 +189,42 @@ const selectPlugin: Plugin<'line'> = {
   afterEvent(chart, args) {
     const event = args.event;
     // chart.update() replays the last event; acting on it would re-select and loop forever.
-    if (args.replay || event.x == null) return;
+    if (args.replay) return;
+    // A lifted finger (touchend) has no position; finish the drag where it last was.
+    const ended = event.type === 'mouseup' || event.type === 'mouseout';
+    if (event.x == null || !Number.isFinite(event.x)) { if (!ended || lastPointer === null) return; event.x = lastPointer; }
+    lastPointer = event.x;
     const area = chart.chartArea;
-    const value = chart.scales.x.getValueForPixel(Math.min(Math.max(event.x, area.left), area.right)) as number;
-    if (event.type === 'mousedown') { dragAnchor = value; selection.value = null; return; }
-    if (dragAnchor === null) return;
+    const x = chart.scales.x;
+    const value = x.getValueForPixel(Math.min(Math.max(event.x, area.left), area.right)) as number;
+    // Which selection edge (if any) the pointer is on; fingers get a wider target than a mouse.
+    const reach = (event.native as Event | null)?.type.startsWith('touch') ? 18 : 7;
+    const current = selection.value;
+    const edge = !current ? null
+      : Math.abs(event.x - x.getPixelForValue(current.start)) <= reach ? 'start'
+      : Math.abs(event.x - x.getPixelForValue(current.end)) <= reach ? 'end' : null;
+    if (event.type === 'mousedown') {
+      if (current && edge) { dragAnchor = edge === 'start' ? current.end : current.start; resizing = true; return; }
+      dragAnchor = value; resizing = false; selection.value = null; return;
+    }
+    if (dragAnchor === null) {
+      if (event.type === 'mousemove') chart.canvas.style.cursor = edge ? 'ew-resize' : 'crosshair';
+      return;
+    }
     const picked = { start: Math.min(dragAnchor, value), end: Math.max(dragAnchor, value) };
-    if (event.type === 'mousemove') selection.value = picked;
-    else if (event.type === 'mouseup' || event.type === 'mouseout') {
+    if (event.type === 'mousemove') {
+      selection.value = picked;
+      if (resizing) setExportRange(new Date(picked.start), new Date(picked.end));
+    } else if (ended) {
       dragAnchor = null;
-      if (picked.end - picked.start < 1000) { selection.value = null; return; }  // a click, not a drag
+      if (picked.end - picked.start < 1000) {  // a click, not a drag (or both edges pulled together)
+        if (!resizing) selection.value = null;
+        resizing = false; return;
+      }
       selection.value = picked;
       setExportRange(new Date(picked.start), new Date(picked.end));
-      exportNotice(`已從圖表選取 ${formatTime(new Date(picked.start).toISOString())} – ${formatTime(new Date(picked.end).toISOString())}，可直接下載。`);
+      exportNotice(`已${resizing ? '調整' : '從圖表選取'} ${pickedText(picked)}，可拖曳兩側直線微調，或直接下載。`);
+      resizing = false;
     }
   },
   beforeDatasetsDraw(chart) {
@@ -205,7 +235,32 @@ const selectPlugin: Plugin<'line'> = {
     if (right <= left) return;
     ctx.save(); ctx.fillStyle = 'rgba(40, 116, 78, 0.12)'; ctx.fillRect(left, area.top, right - left, area.bottom - area.top); ctx.restore();
   },
+  afterDatasetsDraw(chart) {
+    if (!selection.value) return;
+    const { ctx, chartArea: area, scales: { x } } = chart;
+    const middle = (area.top + area.bottom) / 2;
+    ctx.save();
+    for (const time of [selection.value.start, selection.value.end]) {
+      const px = Math.round(x.getPixelForValue(time)) + 0.5;
+      if (px < area.left - 1 || px > area.right + 1) continue;  // edge is outside the visible window
+      ctx.strokeStyle = SELECT_COLOR; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(px, area.top); ctx.lineTo(px, area.bottom); ctx.stroke();
+      // Grip: a small pill with two ridges so the line reads as draggable.
+      ctx.fillStyle = '#fff'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.roundRect(px - 5, middle - 13, 10, 26, 4); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(px - 1.5, middle - 6); ctx.lineTo(px - 1.5, middle + 6);
+      ctx.moveTo(px + 1.5, middle - 6); ctx.lineTo(px + 1.5, middle + 6); ctx.stroke();
+    }
+    ctx.restore();
+  },
 };
+// Typing a valid range in the export fields moves the lines too, so both stay in agreement.
+watch([exportStart, exportEnd], ([startText, endText]) => {
+  if (dragAnchor !== null) return;  // the drag itself is writing these fields
+  const start = fromTaipeiInput(startText).getTime(), end = fromTaipeiInput(endText).getTime();
+  if (Number.isFinite(start) && Number.isFinite(end) && start < end) selection.value = { start, end };
+});
+function clearSelection() { selection.value = null; exportNotice(''); }
 watch(selection, () => charts.forEach((chart) => chart.draw()));
 
 async function zoomToSelection() {
@@ -264,7 +319,7 @@ const tickStep = (spanMs: number) => TICK_STEPS.find((step) => spanMs / step <= 
 const chartOptions = computed<ChartOptions<'line'>>(() => ({
   responsive: true, maintainAspectRatio: false, animation: false,
   interaction: { mode: 'nearest', intersect: false },
-  events: ['mousemove', 'mouseout', 'mousedown', 'mouseup', 'click', 'touchstart', 'touchmove'],
+  events: ['mousemove', 'mouseout', 'mousedown', 'mouseup', 'click', 'touchstart', 'touchmove', 'touchend'],
   plugins: { legend: { display: false }, tooltip: { callbacks: {
     title: (items) => items.length && items[0].parsed.x != null ? formatTime(new Date(items[0].parsed.x).toISOString()) : '',
   } } },
@@ -383,6 +438,7 @@ select, .custom-range input { border: 1px solid #d6e0d8; padding: 8px 12px; bord
 .export-actions button.secondary { background: #edf3ee; color: #28744e; }.export-actions button.secondary:hover { background: #dfeae2; }
 .export-message { width: 100%; font-size: 12px; color: #28744e; }.export-message.error { color: #9b4641; }
 .chart { cursor: crosshair; user-select: none; }
+.chart :deep(canvas) { touch-action: pan-y; }  /* horizontal finger drags select; vertical ones still scroll */
 .chart-card { background: #fff; border: 1px solid #dfe7e0; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
 .chart-title { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; }
 h3 { font-size: 14px; display: flex; gap: 8px; align-items: center; }h3 i { width: 8px; height: 8px; border-radius: 50%; }
