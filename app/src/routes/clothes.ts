@@ -1,16 +1,28 @@
 import { Hono } from 'hono';
-import { CSV_HEADER, type CsvRow, clothesCsvLine, clothesExportRows, clothesHistory, clothesState, latestClothesRaw } from '../clothes/store';
+import {
+  AIR_MAX_AGE_MS, CSV_HEADER, type CsvRow, airReadings, clothesAirboxId, clothesCsvLine, clothesExportRows,
+  clothesHistory, clothesState, latestAir, latestClothesRaw,
+} from '../clothes/store';
 import { mqttSubscriber } from '../mqtt/subscriber';
 
 export const clothesRoute = new Hono();
+
+// Air box data is a bonus next to the clip: if it is missing or unreadable, clip data still works.
+async function optional<T>(read: () => Promise<T>): Promise<T | null> {
+  try { return await read(); } catch { return null; }
+}
 
 clothesRoute.get('/latest', async (c) => {
   try {
     const data = await latestClothesRaw();
     const now = new Date();
     const ageMs = data ? Math.max(0, now.getTime() - new Date(data.timestamp).getTime()) : null;
+    const airboxId = await optional(clothesAirboxId);
+    const reading = airboxId ? await optional(() => latestAir(airboxId)) : null;
+    const airAgeMs = reading ? Math.max(0, now.getTime() - new Date(reading.timestamp).getTime()) : null;
     return c.json({
       success: true, data, server_time: now.toISOString(), age_ms: ageMs,
+      air: airboxId ? { device_id: airboxId, ...reading, age_ms: airAgeMs, stale: airAgeMs === null || airAgeMs > AIR_MAX_AGE_MS } : null,
       stale: ageMs === null || ageMs > 10000,
       mqtt_connected: mqttSubscriber.isConnected(),
       ingestion_error: clothesState.lastError,
@@ -33,7 +45,7 @@ clothesRoute.get('/export', async (c) => {
       end.getTime() - start.getTime() > EXPORT_MAX_DAYS * 24 * 60 * 60000) {
     return c.json({ success: false, error: `請提供 start 與 end，結束需晚於開始，最長 ${EXPORT_MAX_DAYS} 天` }, 400);
   }
-  const pages = clothesExportRows(start, end);
+  const pages = clothesExportRows(start, end, 5000, await optional(clothesAirboxId));
   let first: IteratorResult<CsvRow[], void>;
   try { first = await pages.next(); } catch {
     return c.json({ success: false, error: '資料庫無法讀取，暫時無法匯出' }, 503);
@@ -77,7 +89,10 @@ clothesRoute.get('/history', async (c) => {
   }
   try {
     const result = await clothesHistory(start, end, limit);
-    return c.json({ success: true, start: start.toISOString(), end: end.toISOString(), ...result });
+    const airboxId = await optional(clothesAirboxId);
+    const air = airboxId ? await optional(() => airReadings(airboxId, start, end)) : null;
+    return c.json({ success: true, start: start.toISOString(), end: end.toISOString(), ...result,
+      air: airboxId ? { device_id: airboxId, records: air ?? [] } : null });
   } catch {
     return c.json({ success: false, error: '資料庫無法讀取，歷史資料暫時不可用' }, 503);
   }

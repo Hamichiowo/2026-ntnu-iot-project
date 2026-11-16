@@ -47,20 +47,63 @@ export function historyBucketSeconds(start: Date, end: Date, limit: number) {
   return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 1000 / limit));
 }
 
-export const CSV_HEADER = 'time_taipei,timestamp_utc,hx711_raw,ads1115_raw,touch_raw\n';
-export type CsvRow = { id: string; timestamp: Date | string; hx711_raw: number | null; ads1115_raw: number | null; touch_raw: number | null };
+export const CSV_HEADER = 'time_taipei,timestamp_utc,hx711_raw,ads1115_raw,touch_raw,air_temp_c,air_humi_pct\n';
+export type CsvRow = { id: string; timestamp: Date | string; hx711_raw: number | null; ads1115_raw: number | null; touch_raw: number | null;
+  air_temp?: number | null; air_humi?: number | null };
 const TAIPEI_MS = 8 * 60 * 60000;
-const csvValue = (value: number | null) => value === null ? '' : String(value);
+const csvValue = (value: number | null | undefined) => value == null ? '' : String(value);
 
 // One CSV line per raw reading; time_taipei is what the dashboard shows, timestamp_utc is exact.
 export function clothesCsvLine(row: CsvRow) {
   const time = new Date(row.timestamp);
   const taipei = new Date(time.getTime() + TAIPEI_MS).toISOString().replace('T', ' ').slice(0, 23);
-  return `${taipei},${time.toISOString()},${csvValue(row.hx711_raw)},${csvValue(row.ads1115_raw)},${csvValue(row.touch_raw)}\n`;
+  return `${taipei},${time.toISOString()},${csvValue(row.hx711_raw)},${csvValue(row.ads1115_raw)},${csvValue(row.touch_raw)},` +
+    `${csvValue(row.air_temp)},${csvValue(row.air_humi)}\n`;
+}
+
+// ===== Air box (MAPS) temperature / humidity alongside the clip =====
+// The air box reports about once a minute, so each clip reading takes the latest air reading
+// at or before it, as long as that reading is no older than AIR_MAX_AGE_MS (otherwise blank).
+export const AIR_MAX_AGE_MS = 5 * 60000;
+export type AirReading = { timestamp: Date | string; temp: number | null; humi: number | null };
+
+// Which air box to pair with the clip: CLOTHES_AIRBOX_ID, or else the one that reported most recently.
+export async function clothesAirboxId(): Promise<string | null> {
+  if (process.env.CLOTHES_AIRBOX_ID) return process.env.CLOTHES_AIRBOX_ID;
+  const rows = await database()`SELECT device_id FROM sensor_data ORDER BY timestamp DESC LIMIT 1`;
+  return rows[0]?.device_id ?? null;
+}
+
+export async function airReadings(deviceId: string, start: Date, end: Date): Promise<AirReading[]> {
+  return database()`
+    SELECT timestamp, temp, humi FROM sensor_data
+    WHERE device_id = ${deviceId} AND timestamp >= ${start} AND timestamp <= ${end}
+    ORDER BY timestamp LIMIT 20000`;
+}
+
+export async function latestAir(deviceId: string): Promise<AirReading | null> {
+  const rows = await database()`
+    SELECT timestamp, temp, humi FROM sensor_data WHERE device_id = ${deviceId}
+    ORDER BY timestamp DESC LIMIT 1`;
+  return rows[0] ?? null;
+}
+
+// Both lists must be in time order. Rounded to 0.01 so the CSV stays readable.
+export function attachAir<T extends CsvRow>(rows: T[], air: AirReading[], maxAgeMs = AIR_MAX_AGE_MS): T[] {
+  const round = (value: number | null) => value == null ? null : Math.round(value * 100) / 100;
+  let next = 0;
+  let current: AirReading | null = null;
+  for (const row of rows) {
+    const time = new Date(row.timestamp).getTime();
+    while (next < air.length && new Date(air[next].timestamp).getTime() <= time) current = air[next++];
+    const fresh = current && time - new Date(current.timestamp).getTime() <= maxAgeMs ? current : null;
+    row.air_temp = round(fresh?.temp ?? null); row.air_humi = round(fresh?.humi ?? null);
+  }
+  return rows;
 }
 
 // Raw (never averaged) rows in time order, read in pages so a week of 1 Hz data is not held in memory.
-export async function* clothesExportRows(start: Date, end: Date, pageSize = 5000) {
+export async function* clothesExportRows(start: Date, end: Date, pageSize = 5000, airboxId: string | null = null) {
   const sql = database();
   let after: { timestamp: Date | string; id: string } | null = null;
   while (true) {
@@ -73,6 +116,10 @@ export async function* clothesExportRows(start: Date, end: Date, pageSize = 5000
         SELECT id::text, timestamp, hx711_raw, ads1115_raw, touch_raw FROM clothes_raw
         WHERE timestamp >= ${start} AND timestamp <= ${end}
         ORDER BY timestamp, id LIMIT ${pageSize}`;
+    if (rows.length && airboxId) {
+      const first = new Date(rows[0].timestamp), last = new Date(rows[rows.length - 1].timestamp);
+      attachAir(rows, await airReadings(airboxId, new Date(first.getTime() - AIR_MAX_AGE_MS), last));
+    }
     yield rows;
     if (rows.length < pageSize) return;
     after = rows[rows.length - 1];

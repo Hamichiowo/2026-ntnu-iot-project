@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { parseClothesRaw } from '../src/clothes/validation';
 import { ingestClothesRaw } from '../src/clothes/ingest';
 import { clothesRoute } from '../src/routes/clothes';
-import { CSV_HEADER, clothesCsvLine, historyBucketSeconds } from '../src/clothes/store';
+import { CSV_HEADER, type CsvRow, attachAir, clothesCsvLine, historyBucketSeconds } from '../src/clothes/store';
 
 const raw = { hx711_raw: -1500, ads1115_raw: 7799, touch_raw: 31875 };
 describe('Clothes MQTT contract', () => {
@@ -40,9 +40,19 @@ describe('Clothes MQTT contract', () => {
     }
   });
   it('writes CSV lines in Taipei and UTC time with empty cells for failed reads', () => {
-    expect(CSV_HEADER).toBe('time_taipei,timestamp_utc,hx711_raw,ads1115_raw,touch_raw\n');
+    expect(CSV_HEADER).toBe('time_taipei,timestamp_utc,hx711_raw,ads1115_raw,touch_raw,air_temp_c,air_humi_pct\n');
     expect(clothesCsvLine({ id: '1', timestamp: new Date('2026-11-13T17:15:53.250Z'), hx711_raw: -1500, ads1115_raw: null, touch_raw: 0 }))
-      .toBe('2026-11-14 01:15:53.250,2026-11-13T17:15:53.250Z,-1500,,0\n');
+      .toBe('2026-11-14 01:15:53.250,2026-11-13T17:15:53.250Z,-1500,,0,,\n');
+    expect(clothesCsvLine({ id: '1', timestamp: '2026-11-13T17:15:53Z', hx711_raw: 1, ads1115_raw: 2, touch_raw: 3, air_temp: 24.5, air_humi: 61.25 }))
+      .toBe('2026-11-14 01:15:53.000,2026-11-13T17:15:53.000Z,1,2,3,24.5,61.25\n');
+  });
+  it('pairs each clip reading with the latest air reading no older than 5 minutes', () => {
+    const t = (minutes: number) => new Date(Date.UTC(2026, 10, 14, 0, 0) + minutes * 60000).toISOString();
+    const clip = (minutes: number): CsvRow => ({ id: String(minutes), timestamp: t(minutes), hx711_raw: 0, ads1115_raw: 0, touch_raw: 0 });
+    const rows = attachAir([clip(-1), clip(0), clip(0.5), clip(1), clip(7)],
+      [{ timestamp: t(0), temp: 24.456, humi: 60 }, { timestamp: t(1), temp: 25, humi: null }]);
+    expect(rows.map((row) => [row.air_temp, row.air_humi])).toEqual(
+      [[null, null], [24.46, 60], [24.46, 60], [25, null], [null, null]]);
   });
   it('requires a closed export range of at most 7 days', async () => {
     const app = new Hono().route('/clothes', clothesRoute);
