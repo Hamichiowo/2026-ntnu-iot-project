@@ -54,6 +54,15 @@ describe('Clothes MQTT contract', () => {
     expect(rows.map((row) => [row.air_temp, row.air_humi])).toEqual(
       [[null, null], [24.46, 60], [24.46, 60], [25, null], [null, null]]);
   });
+  it('rejects a malformed airbox choice and reports the air box list as unavailable without a database', async () => {
+    const app = new Hono().route('/clothes', clothesRoute);
+    for (const path of ['/clothes/latest?airbox=', '/clothes/latest?airbox=a%20b', `/clothes/latest?airbox=${'x'.repeat(65)}`,
+      '/clothes/history?airbox=a;b', '/clothes/export?start=2026-01-01&end=2026-01-02&airbox=a/b']) {
+      expect((await app.request(path)).status).toBe(400);
+    }
+    expect((await app.request('/clothes/latest?airbox=B827EBE1580E')).status).toBe(503);
+    expect((await app.request('/clothes/airboxes')).status).toBe(503);
+  });
   it('requires a closed export range of at most 7 days', async () => {
     const app = new Hono().route('/clothes', clothesRoute);
     for (const query of ['', 'start=2026-01-01', 'end=2026-01-01', 'start=bad&end=2026-01-02',
