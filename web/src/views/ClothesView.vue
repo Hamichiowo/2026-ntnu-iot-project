@@ -22,6 +22,16 @@
       </article>
     </section>
 
+    <section class="env-grid" aria-label="環境溫溼度（空氣盒子）">
+      <article v-for="key in (['temp', 'humi'] as const)" :key="key" class="reading env" :style="{ '--sensor-color': ENV[key].color }">
+        <div class="reading-label"><span>{{ ENV[key].label }}</span><span class="hardware">空氣盒子{{ air ? ` ${air.device_id}` : '' }}</span></div>
+        <div class="value">{{ formatAir(air?.[key]) }}<small>{{ ENV[key].unit }}</small></div>
+        <div class="reading-note">
+          {{ !air ? '尚未收到空氣盒子資料' : air.stale ? `超過 5 分鐘未更新（最後 ${air.timestamp ? formatTime(air.timestamp) : '—'}）` : `更新於 ${formatTime(air.timestamp!)}` }}
+        </div>
+      </article>
+    </section>
+
     <div class="meta-row">
       <span>最後接收時間：<strong>{{ latest ? formatTime(latest.timestamp) : '尚未收到資料' }}</strong></span>
       <span>每秒一筆 · 時間由 server 記錄 · 顯示時區：台北</span>
@@ -95,7 +105,7 @@
       <form class="export-panel" @submit.prevent="downloadCsv">
         <div class="export-title">
           <strong>匯出 CSV</strong>
-          <span>原始每秒資料（不平均），台北時間，最長 {{ EXPORT_MAX_DAYS }} 天。也可以在下方曲線上按住拖曳選取時段，再拖曳兩側直線微調。</span>
+          <span>原始每秒資料（不平均），附空氣盒子溫溼度，台北時間，最長 {{ EXPORT_MAX_DAYS }} 天。也可以在下方曲線上按住拖曳選取時段，再拖曳兩側直線微調。</span>
         </div>
         <label>開始<input v-model="exportStart" type="datetime-local" step="1" required aria-label="匯出開始時間（台北）" /></label>
         <label>結束<input v-model="exportEnd" type="datetime-local" step="1" required aria-label="匯出結束時間（台北）" /></label>
@@ -118,6 +128,13 @@
       <article v-for="sensor in sensors" v-else :key="sensor.key" class="chart-card">
         <div class="chart-title"><h3><i :style="{ background: sensor.color }"></i>{{ sensor.title }}</h3><span>{{ sensor.key }} · 原始計數</span></div>
         <div class="chart" title="按住拖曳可選取匯出時段"><Line :data="chartDatasets[sensor.key]" :options="chartOptions" :plugins="[selectPlugin]" /></div>
+      </article>
+      <article v-if="airRecords.length" class="chart-card">
+        <div class="chart-title">
+          <h3><i :style="{ background: ENV.temp.color }"></i>環境溫度 <i :style="{ background: ENV.humi.color }"></i>環境濕度</h3>
+          <span>空氣盒子 {{ air?.device_id }} · 約每分鐘一筆</span>
+        </div>
+        <div class="chart" title="按住拖曳可選取匯出時段"><Line :data="envChartData" :options="envChartOptions" :plugins="[selectPlugin]" /></div>
       </article>
       <div class="history-footer">
         {{ formatTime(range.start.toISOString()) }} – {{ formatTime(range.end.toISOString()) }} ·
@@ -154,6 +171,10 @@ const loaded = ref(false);
 const historyLoading = ref(true);
 const truncated = ref(false);
 const bucketSeconds = ref(0);
+type AirReading = { timestamp: string; temp: number | null; humi: number | null };
+type AirLatest = Partial<AirReading> & { device_id: string; age_ms: number | null; stale: boolean };
+const air = ref<AirLatest | null>(null);  // null: no air box has ever reported
+const airRecords = ref<AirReading[]>([]);
 const presets = [
   { minutes: 5, label: '最近 5 分鐘' }, { minutes: 15, label: '最近 15 分鐘' }, { minutes: 60, label: '最近 1 小時' },
   { minutes: 360, label: '最近 6 小時' }, { minutes: 1440, label: '最近 24 小時' },
@@ -481,6 +502,38 @@ function chartData(sensor: Sensor) {
 // Built once per data change, so typing in the export form or dragging never rebuilds the charts.
 const chartDatasets = computed(() => Object.fromEntries(sensors.map((sensor) => [sensor.key, chartData(sensor)])) as Record<Field, ReturnType<typeof chartData>>);
 
+// Air box temperature (left axis) and humidity (right axis) in one chart, on the same time axis.
+const ENV = { temp: { label: '環境溫度', unit: '°C', color: '#c9573c' }, humi: { label: '環境濕度', unit: '%', color: '#3c7fc9' } };
+const envChartData = computed(() => {
+  const series = (key: 'temp' | 'humi') => {
+    const points: { x: number; y: number | null }[] = [];
+    let previous: number | undefined;
+    for (const reading of airRecords.value) {
+      const time = new Date(reading.timestamp).getTime();
+      // The box reports about once a minute; break the line if it went quiet for over 5 minutes.
+      if (previous !== undefined && time - previous > 5 * 60000) points.push({ x: previous + 1, y: null });
+      points.push({ x: time, y: reading[key] });
+      previous = time;
+    }
+    return { label: ENV[key].label, data: points, yAxisID: key === 'temp' ? 'y' : 'y1', borderColor: ENV[key].color,
+      backgroundColor: ENV[key].color, borderWidth: 2, pointRadius: airRecords.value.length === 1 ? 3 : 0, pointHitRadius: 8, spanGaps: false, tension: 0 };
+  };
+  return { datasets: [series('temp'), series('humi')] };
+});
+const envChartOptions = computed<ChartOptions<'line'>>(() => ({
+  ...chartOptions.value,
+  plugins: { ...chartOptions.value.plugins, tooltip: { callbacks: {
+    title: (items) => items.length && items[0].parsed.x != null ? formatTime(new Date(items[0].parsed.x).toISOString()) : '',
+    label: (item) => `${item.dataset.label}：${formatAir(item.parsed.y)} ${item.datasetIndex === 0 ? ENV.temp.unit : ENV.humi.unit}`,
+  } } },
+  scales: {
+    x: chartOptions.value.scales!.x!,
+    y: { position: 'left', title: { display: true, text: '溫度 °C', color: ENV.temp.color }, ticks: { color: ENV.temp.color } },
+    y1: { position: 'right', title: { display: true, text: '濕度 %', color: ENV.humi.color }, ticks: { color: ENV.humi.color }, grid: { display: false } },
+  },
+}));
+const formatAir = (value: number | null | undefined, digits = 1) => value == null ? '—' : value.toFixed(digits);
+
 // Round tick spacing (whole minutes/hours) so labels read 10:00, 12:00 … rather than 10:26.
 // Taipei is a whole-hour UTC offset, so multiples of these steps fall on round local times.
 const TICK_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 240, 360].map((m) => m * 60000);
@@ -521,6 +574,7 @@ async function loadLatest() {
     if (stopped) return;
     latest.value = data.data; stale.value = data.stale;
     mqttConnected.value = data.mqtt_connected; ingestionError.value = data.ingestion_error;
+    air.value = data.air ?? null;
     error.value = ''; loaded.value = true;
   } catch { if (!stopped) error.value = '無法取得最新資料'; }
 }
@@ -533,6 +587,7 @@ async function loadHistory(start: Date, end: Date) {
     if (stopped || id !== historyRequest) return;
     range.value = { start, end };
     records.value = data.records; truncated.value = data.truncated; bucketSeconds.value = data.bucket_seconds ?? 0;
+    airRecords.value = data.air?.records ?? [];
     historyError.value = ''; historyUpdated = Date.now();
   } catch { if (!stopped && id === historyRequest) historyError.value = '歷史資料更新失敗，正在等待重新連線。'; }
   finally { if (!stopped && id === historyRequest) historyLoading.value = false; }
@@ -589,6 +644,8 @@ h1 span { font-size: 16px; font-weight: 400; margin-left: 12px; color: #61756d; 
 .value { font-size: clamp(25px, 3vw, 38px); color: var(--sensor-color); font-variant-numeric: tabular-nums; margin: 20px 0 12px; font-weight: 700; }
 .value small { font-size: 12px; font-weight: 400; color: #7a877f; margin-left: 9px; }
 .reading-note { font-size: 12px; color: #7a877f; }
+.env-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; margin-top: 18px; }
+.reading.env { padding: 16px 22px; }.reading.env .value { margin: 10px 0 8px; font-size: clamp(22px, 2.4vw, 30px); }
 .meta-row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; color: #76857a; padding: 18px 0 28px; }
 .meta-row strong { font-weight: 500; color: #425c4f; }
 .history-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; gap: 16px; }
@@ -639,5 +696,5 @@ h3 { font-size: 14px; display: flex; gap: 8px; align-items: center; }h3 i { widt
 .calib button:disabled { opacity: .45; cursor: not-allowed; }.calib-now { color: #839087; font-variant-numeric: tabular-nums; }
 .calib-clear { margin-top: 12px; margin-right: 8px; }
 .calib-default { margin-left: 10px; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 999px; background: #faf1de; color: #866324; }
-@media (max-width: 800px) { .verdict, .dry-grid { grid-template-columns: 1fr; }.intro { align-items: flex-start; flex-direction: column; gap: 14px; }.reading-grid { grid-template-columns: 1fr; }.value { font-size: 32px; }.history-heading { align-items: flex-start; flex-direction: column; }.clothes-page { padding: 24px 16px; }h1 span { display: block; margin: 4px 0 0; }.chart-title span { font-size: 10px; }.custom-range label { width: 100%; justify-content: space-between; }.custom-range input { flex: 1; min-width: 0; }.export-panel label { width: 100%; justify-content: space-between; }.export-panel input { flex: 1; min-width: 0; }.export-actions, .export-actions button { width: 100%; } }
+@media (max-width: 800px) { .verdict, .dry-grid, .env-grid { grid-template-columns: 1fr; }.intro { align-items: flex-start; flex-direction: column; gap: 14px; }.reading-grid { grid-template-columns: 1fr; }.value { font-size: 32px; }.history-heading { align-items: flex-start; flex-direction: column; }.clothes-page { padding: 24px 16px; }h1 span { display: block; margin: 4px 0 0; }.chart-title span { font-size: 10px; }.custom-range label { width: 100%; justify-content: space-between; }.custom-range input { flex: 1; min-width: 0; }.export-panel label { width: 100%; justify-content: space-between; }.export-panel input { flex: 1; min-width: 0; }.export-actions, .export-actions button { width: 100%; } }
 </style>

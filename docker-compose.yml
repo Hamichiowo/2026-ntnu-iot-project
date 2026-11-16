@@ -46,6 +46,7 @@ services:
       MQTT_USERNAME: ${MQTT_USERNAME:-maps}
       MQTT_PASSWORD: ${MQTT_PASSWORD:?Set MQTT_PASSWORD in .env}
       CLOTHES_MQTT_TOPIC: ${CLOTHES_MQTT_TOPIC:-clothes/raw}
+      CLOTHES_AIRBOX_ID: ${CLOTHES_AIRBOX_ID:-}
       SESSION_SECRET: ${SESSION_SECRET:-maps6_super_secret_session_key}
       PORT: 3000
     depends_on:
