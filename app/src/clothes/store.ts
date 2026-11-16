@@ -74,6 +74,14 @@ export async function clothesAirboxId(): Promise<string | null> {
   return rows[0]?.device_id ?? null;
 }
 
+// Every air box that has reported, newest reading first, for the dashboard picker.
+export async function listAirboxes(): Promise<Array<{ device_id: string; display_name: string | null; online: boolean; last_reading: Date | null }>> {
+  return database()`
+    SELECT d.device_id, d.display_name, d.online,
+      (SELECT max(s.timestamp) FROM sensor_data s WHERE s.device_id = d.device_id) AS last_reading
+    FROM devices d ORDER BY last_reading DESC NULLS LAST, d.device_id`;
+}
+
 export async function airReadings(deviceId: string, start: Date, end: Date): Promise<AirReading[]> {
   return database()`
     SELECT timestamp, temp, humi FROM sensor_data

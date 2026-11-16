@@ -22,6 +22,16 @@
       </article>
     </section>
 
+    <div class="env-heading">
+      <h2>環境溫溼度</h2>
+      <label>空氣盒子
+        <select v-model="airboxChoice" aria-label="選擇空氣盒子">
+          <option value="">自動{{ defaultAirboxId ? `（${defaultAirboxId}）` : '' }}</option>
+          <option v-for="box in airboxOptions" :key="box.device_id" :value="box.device_id">{{ airboxLabel(box) }}</option>
+        </select>
+      </label>
+      <span v-if="airboxes.length && !airboxOptions.length" class="range-hint">目前沒有連線中的空氣盒子</span>
+    </div>
     <section class="env-grid" aria-label="環境溫溼度（空氣盒子）">
       <article v-for="key in (['temp', 'humi'] as const)" :key="key" class="reading env" :style="{ '--sensor-color': ENV[key].color }">
         <div class="reading-label"><span>{{ ENV[key].label }}</span><span class="hardware">空氣盒子{{ air ? ` ${air.device_id}` : '' }}</span></div>
@@ -175,6 +185,29 @@ type AirReading = { timestamp: string; temp: number | null; humi: number | null 
 type AirLatest = Partial<AirReading> & { device_id: string; age_ms: number | null; stale: boolean };
 const air = ref<AirLatest | null>(null);  // null: no air box has ever reported
 const airRecords = ref<AirReading[]>([]);
+// Air box picker: '' follows the server default (CLOTHES_AIRBOX_ID or the one that reported last).
+type Airbox = { device_id: string; display_name: string | null; last_reading: string | null; connected: boolean };
+const airboxes = ref<Airbox[]>([]);
+const defaultAirboxId = ref<string | null>(null);
+const AIRBOX_KEY = 'clothes-airbox';
+const airboxChoice = ref((() => { try { return localStorage.getItem(AIRBOX_KEY) ?? ''; } catch { return ''; } })());
+const airboxOptions = computed(() => {
+  const shown = airboxes.value.filter((box) => box.connected);
+  const picked = airboxes.value.find((box) => box.device_id === airboxChoice.value);
+  if (picked && !picked.connected) shown.push(picked);  // keep the current choice visible even if it dropped off
+  return shown;
+});
+const airboxLabel = (box: Airbox) => `${box.display_name ? `${box.display_name}（${box.device_id}）` : box.device_id}${box.connected ? '' : '（離線）'}`;
+// Adds ?airbox= only for an explicit choice, so "auto" keeps following the server default.
+const withAirbox = (params: URLSearchParams) => { if (airboxChoice.value) params.set('airbox', airboxChoice.value); return params; };
+let airboxesLoaded = 0;
+async function loadAirboxes() {
+  try {
+    const data = await request('/api/v1/clothes/airboxes');
+    if (stopped) return;
+    airboxes.value = data.airboxes; defaultAirboxId.value = data.default_id; airboxesLoaded = Date.now();
+  } catch { /* the picker keeps its last list */ }
+}
 const presets = [
   { minutes: 5, label: '最近 5 分鐘' }, { minutes: 15, label: '最近 15 分鐘' }, { minutes: 60, label: '最近 1 小時' },
   { minutes: 360, label: '最近 6 小時' }, { minutes: 1440, label: '最近 24 小時' },
@@ -220,7 +253,7 @@ async function downloadCsv() {
   if (end.getTime() - start.getTime() > EXPORT_MAX_DAYS * DAY_MS) return exportNotice(`一次最多匯出 ${EXPORT_MAX_DAYS} 天。`, true);
   exporting.value = true; exportNotice('');
   try {
-    const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString() });
+    const params = withAirbox(new URLSearchParams({ start: start.toISOString(), end: end.toISOString() }));
     const response = await fetch(`/api/v1/clothes/export?${params}`, { cache: 'no-store' });
     if (!response.ok) {
       const data = await response.json().catch(() => null);
@@ -570,8 +603,10 @@ async function request(path: string) {
 
 async function loadLatest() {
   try {
-    const data = await request('/api/v1/clothes/latest');
-    if (stopped) return;
+    const choice = airboxChoice.value;
+    const query = withAirbox(new URLSearchParams()).toString();
+    const data = await request(`/api/v1/clothes/latest${query ? `?${query}` : ''}`);
+    if (stopped || choice !== airboxChoice.value) return;  // the user switched air box meanwhile
     latest.value = data.data; stale.value = data.stale;
     mqttConnected.value = data.mqtt_connected; ingestionError.value = data.ingestion_error;
     air.value = data.air ?? null;
@@ -582,7 +617,7 @@ async function loadLatest() {
 async function loadHistory(start: Date, end: Date) {
   const id = ++historyRequest;  // ignore responses for a range the user already left
   try {
-    const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString(), limit: '5000' });
+    const params = withAirbox(new URLSearchParams({ start: start.toISOString(), end: end.toISOString(), limit: '5000' }));
     const data = await request(`/api/v1/clothes/history?${params}`);
     if (stopped || id !== historyRequest) return;
     range.value = { start, end };
@@ -611,7 +646,8 @@ function applyCustom() {
 
 async function poll() {
   const due = mode.value !== 'custom' && Date.now() - historyUpdated >= refreshSeconds.value * 1000;
-  await Promise.all([loadLatest(), due ? loadPreset() : Promise.resolve()]);
+  const listDue = Date.now() - airboxesLoaded >= 30000;
+  await Promise.all([loadLatest(), due ? loadPreset() : Promise.resolve(), listDue ? loadAirboxes() : Promise.resolve()]);
   if (!stopped) timer = setTimeout(poll, 1000);
 }
 watch(mode, (value) => {
@@ -622,6 +658,13 @@ watch(mode, (value) => {
     return;
   }
   historyUpdated = 0; historyLoading.value = true; records.value = [];
+});
+watch(airboxChoice, (value) => {
+  try { localStorage.setItem(AIRBOX_KEY, value); } catch { /* choice just lasts for this visit */ }
+  air.value = null; airRecords.value = [];
+  void loadLatest();
+  // Reload the same window with the new air box (presets refresh on the next poll).
+  if (mode.value === 'custom') void loadHistory(range.value.start, range.value.end); else historyUpdated = 0;
 });
 onMounted(poll);
 onUnmounted(() => { stopped = true; clearTimeout(timer); controllers.forEach((controller) => controller.abort()); });
@@ -644,7 +687,8 @@ h1 span { font-size: 16px; font-weight: 400; margin-left: 12px; color: #61756d; 
 .value { font-size: clamp(25px, 3vw, 38px); color: var(--sensor-color); font-variant-numeric: tabular-nums; margin: 20px 0 12px; font-weight: 700; }
 .value small { font-size: 12px; font-weight: 400; color: #7a877f; margin-left: 9px; }
 .reading-note { font-size: 12px; color: #7a877f; }
-.env-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; margin-top: 18px; }
+.env-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 26px; }.env-heading h2 { font-size: 16px; }
+.env-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; margin-top: 12px; }
 .reading.env { padding: 16px 22px; }.reading.env .value { margin: 10px 0 8px; font-size: clamp(22px, 2.4vw, 30px); }
 .meta-row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; color: #76857a; padding: 18px 0 28px; }
 .meta-row strong { font-weight: 500; color: #425c4f; }
