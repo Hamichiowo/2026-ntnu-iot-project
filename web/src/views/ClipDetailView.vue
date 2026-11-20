@@ -96,7 +96,7 @@
 
           <form class="panel panel--sm" @submit.prevent="downloadCsv">
             <h2>匯出原始資料</h2>
-            <p class="muted small">原始每秒資料（不平均），附空氣盒子溫溼度，台北時間，最長 {{ EXPORT_MAX_DAYS }} 天。可在曲線上拖曳選取時段。</p>
+            <p class="muted small">原始資料（不再平均），附空氣盒子溫溼度，台北時間，最長 {{ EXPORT_MAX_DAYS }} 天。可在曲線上拖曳選取時段。</p>
             <div class="ui-field"><label for="ex-start">開始</label><input id="ex-start" v-model="exportStart" class="ui-input ui-input--sm" type="datetime-local" step="1" required /></div>
             <div class="ui-field"><label for="ex-end">結束</label><input id="ex-end" v-model="exportEnd" class="ui-input ui-input--sm" type="datetime-local" step="1" required /></div>
             <div class="stack">
@@ -178,7 +178,7 @@ const { palette } = useTheme();
 const mock = useClothesMock();
 const data = useClothesHistory();
 const {
-  latest, error, ingestionError, mqttConnected, air, connectionText,
+  latest, error, ingestionError, mqttConnected, air, connectionText, staleAfterMs,
   records, airRecords, historyError, historyLoading, truncated, bucketSeconds,
   mode, customStart, customEnd, rangeError, range, refreshSeconds, applyCustom,
 } = data;
@@ -202,8 +202,9 @@ const timeTick = (value: number) => {
 function chartData(sensor: Sensor) {
   const points: { x: number; y: number | null }[] = [];
   let previous: number | undefined;
-  // Break the line on a gap longer than ~3 samples (1 s raw, or one averaged bucket).
-  const gapMs = Math.max(3000, bucketSeconds.value * 2500);
+  // Break the line only where data was interrupted (the clip reports about once a minute),
+  // or across more than ~2 averaged buckets.
+  const gapMs = Math.max(staleAfterMs.value, bucketSeconds.value * 2500);
   for (const record of records.value) {
     const time = new Date(record.timestamp).getTime();
     if (previous !== undefined && time - previous > gapMs) points.push({ x: previous + 1, y: null });

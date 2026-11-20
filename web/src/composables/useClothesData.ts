@@ -28,6 +28,7 @@ const error = ref('');
 const ingestionError = ref<string | null>(null);
 const mqttConnected = ref(false);
 const stale = ref(true);
+const staleAfterMs = ref(3 * 60000);  // from the server: no report for this long = interrupted
 const loaded = ref(false);
 const air = ref<AirLatest | null>(null);  // null: no air box has ever reported
 
@@ -77,6 +78,7 @@ async function loadLatest() {
     const data = await request(`/api/v1/clothes/latest${query ? `?${query}` : ''}`);
     if (!liveUsers || choice !== airboxChoice.value) return;  // the user switched air box meanwhile
     latest.value = data.data; stale.value = data.stale;
+    if (typeof data.stale_after_ms === 'number') staleAfterMs.value = data.stale_after_ms;
     mqttConnected.value = data.mqtt_connected; ingestionError.value = data.ingestion_error;
     air.value = data.air ?? null;
     error.value = ''; loaded.value = true;
@@ -91,7 +93,7 @@ const connectionText = computed(() => {
   if (!loaded.value) return '正在連線';
   if (!mqttConnected.value) return 'MQTT 尚未連線';
   if (!latest.value) return '等待衣夾資料';
-  return stale.value ? '資料中斷（超過 10 秒）' : '正在接收資料';
+  return stale.value ? `資料中斷（超過 ${Math.round(staleAfterMs.value / 60000)} 分鐘）` : '正在接收資料';
 });
 // The real clip counts as online while it is sending fresh data.
 const clipOnline = computed(() => !!latest.value && !stale.value);
@@ -190,7 +192,7 @@ function stopIfIdle() {
 
 // ---------------------------------------------------------------- public API
 const liveState = {
-  latest, error, ingestionError, mqttConnected, stale, loaded, air, clipOnline,
+  latest, error, ingestionError, mqttConnected, stale, staleAfterMs, loaded, air, clipOnline,
   airboxes, defaultAirboxId, airboxChoice, airboxOptions, connectionTone, connectionText,
 };
 

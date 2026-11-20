@@ -4,7 +4,7 @@
 
     <section aria-label="系統摘要" class="ui-stats">
       <div class="ui-stat"><span class="ui-stat__label">在線設備</span><span class="ui-stat__value">{{ onlineCount }}<small> / {{ totalCount }}</small></span></div>
-      <div class="ui-stat"><span class="ui-stat__label">訊息速率</span><span class="ui-stat__value">{{ rate }}<small> 筆/秒</small></span></div>
+      <div class="ui-stat"><span class="ui-stat__label">訊息速率</span><span class="ui-stat__value">{{ rate }}<small> 筆/分</small></span></div>
       <div class="ui-stat" :class="{ 'ui-stat--warn': attention > 0 }"><span class="ui-stat__label">需要注意</span><span class="ui-stat__value">{{ attention }}<small> 台</small></span></div>
     </section>
 
@@ -167,8 +167,8 @@ onUnmounted(() => clearInterval(airTimer));
 
 const onlineCount = computed(() => clips.value.filter((c) => c.status.online).length + airDevices.value.filter((d) => d.online).length);
 const totalCount = computed(() => clips.value.length + airDevices.value.length);
-// Clips send one message per second; air boxes report about once a minute.
-const rate = computed(() => (clips.value.filter((c) => c.status.online).length + airDevices.value.filter((d) => d.online).length / 60).toFixed(1));
+// Clips and air boxes each report about once a minute (clips every 10 s while being touched).
+const rate = computed(() => clips.value.filter((c) => c.status.online).length + airDevices.value.filter((d) => d.online).length);
 const attention = computed(() => clips.value.filter((c) => c.status.tone !== 'on').length + airDevices.value.filter((d) => !d.online).length);
 
 // Demo connection log, relative to now.
