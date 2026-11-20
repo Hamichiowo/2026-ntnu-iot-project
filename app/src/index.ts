@@ -76,7 +76,7 @@ async function bootstrap() {
   await dbClient.connect();
   // Clothes raw must be persisted before the subscriber is started.
   await ensureClothesSchema();
-  // Per-clip settings; clips.airbox_id refers to the MAPS devices table.
+  // Clips, garments and drying sessions; clips.airbox_id refers to the MAPS devices table.
   await ensureDryingSchema();
   await ensureSettingsSchema();
 
