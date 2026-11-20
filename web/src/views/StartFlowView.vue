@@ -14,7 +14,7 @@
 
       <div class="stage">
         <div class="preview">
-          <svg class="line" aria-hidden="true" width="100%" height="60" viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M0,30 Q50,46 100,30" fill="none" :stroke="palette.tx2" stroke-width="2.5" vector-effect="non-scaling-stroke" /></svg>
+          <svg class="line" aria-hidden="true" width="100%" height="60" viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M0,15 Q50,30 100,15" fill="none" :stroke="palette.tx2" stroke-width="2.5" vector-effect="non-scaling-stroke" /></svg>
           <GarmentFigure uid="start" :garment="chosen" :label="chosen ? `預覽：${chosen.name}` : '尚未選擇衣物'" />
           <p class="caption">{{ caption }}</p>
         </div>
@@ -168,8 +168,9 @@ function start() {
 .steps li.reached .num { background: var(--ac); color: #0B0F14; }
 .steps .label { font-size: 1.0625rem; font-weight: 700; }
 .stage { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 40px 64px; }
-.preview { flex: 1 1 460px; min-width: 0; position: relative; display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.line { position: absolute; left: 0; top: 0; }
+.preview { flex: 1 1 460px; min-width: 0; position: relative; display: flex; flex-direction: column; align-items: center; gap: 12px; container-type: inline-size; }
+/* A fifth of the garment width (60 of its 300 units), so the line always runs through the hanger hook. */
+.line { position: absolute; left: 0; top: 0; height: min(76px, 20cqw); }
 .caption { color: var(--tx2); text-align: center; }
 .side { flex: 1 1 440px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
 .card { display: flex; flex-direction: column; gap: 16px; padding: 28px; border-radius: 20px; border: 1px solid var(--bd); background: var(--bg); }

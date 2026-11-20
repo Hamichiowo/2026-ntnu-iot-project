@@ -11,7 +11,7 @@
         <div v-if="items.length && cur" class="stage">
           <div class="carousel">
             <div class="track-wrap">
-              <svg class="line" aria-hidden="true" width="100%" height="60" viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M0,30 Q50,46 100,30" fill="none" :stroke="palette.tx2" stroke-width="2.5" vector-effect="non-scaling-stroke" /></svg>
+              <svg class="line" aria-hidden="true" width="100%" height="60" viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M0,15 Q50,30 100,15" fill="none" :stroke="palette.tx2" stroke-width="2.5" vector-effect="non-scaling-stroke" /></svg>
               <div class="track" :style="{ transform: `translateX(-${idx * 100}%)` }">
                 <div v-for="(item, i) in items" :key="item.session.id" class="slide" :aria-hidden="i !== idx">
                   <GarmentFigure :uid="item.session.id" :garment="i === idx && previewGarment ? previewGarment : item.garment"
@@ -147,7 +147,7 @@
         <div v-else class="stage">
           <div class="carousel">
             <div class="track-wrap">
-              <svg class="line" aria-hidden="true" width="100%" height="60" viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M0,30 Q50,46 100,30" fill="none" :stroke="palette.tx2" stroke-width="2.5" vector-effect="non-scaling-stroke" /></svg>
+              <svg class="line" aria-hidden="true" width="100%" height="60" viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M0,15 Q50,30 100,15" fill="none" :stroke="palette.tx2" stroke-width="2.5" vector-effect="non-scaling-stroke" /></svg>
               <GarmentFigure uid="idle" :garment="null" />
             </div>
           </div>
@@ -403,7 +403,8 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .hero h1 { font-size: 1.75rem; }
 .stage { display: flex; flex-wrap: wrap; align-items: center; gap: 40px 64px; min-height: 620px; }
 .carousel { flex: 1 1 520px; min-width: 0; position: relative; }
-.line { position: absolute; left: 0; top: 0; display: block; }
+/* Scales with the garment (60 of its 370 units) so the line always runs through the hanger hook. */
+.line { position: absolute; left: 0; top: 0; display: block; height: 16.216%; }
 .track-wrap { position: relative; overflow: hidden; }
 .track { position: relative; display: flex; transition: transform 0.55s cubic-bezier(0.22, 0.8, 0.24, 1); }  /* above the clothesline */
 .slide { flex: 0 0 100%; display: flex; justify-content: center; }
@@ -522,8 +523,9 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
     gap: 0 clamp(32px, 4vw, 64px);
   }
   /* Clothesline, garment and dots stay together and are centred in the column. */
-  .carousel { display: flex; flex-direction: column; justify-content: center; min-height: 0; }
-  .track-wrap { flex: 0 1 600px; min-height: 0; }
+  .carousel { display: flex; flex-direction: column; justify-content: center; min-height: 0; container-type: inline-size; }
+  /* Never taller than the column can show at 300:370, so the garment is not squeezed sideways. */
+  .track-wrap { flex: 0 1 min(600px, 123.33cqw); min-height: 0; }
   .track, .slide { height: 100%; }
   .slide { align-items: flex-start; }
   .track-wrap :deep(.garment) { width: auto; max-width: 100%; height: 100%; aspect-ratio: 300 / 370; }

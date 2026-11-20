@@ -1,5 +1,5 @@
 <template>
-  <svg class="garment" viewBox="0 0 300 370" role="img" :aria-label="label">
+  <svg class="garment" viewBox="0 0 300 370" preserveAspectRatio="xMidYMin meet" role="img" :aria-label="label">
     <defs v-if="garment">
       <clipPath :id="ids.clip"><path :d="shape.d" /></clipPath>
       <pattern :id="ids.pat" :width="mat.w" :height="mat.h" patternUnits="userSpaceOnUse" :patternTransform="mat.rot || undefined">
@@ -16,7 +16,8 @@
     <path :d="HANGER_HOOK" fill="none" :stroke="palette.tx2" stroke-width="3.5" stroke-linecap="round" />
     <path :d="HANGER_BAR" fill="none" :stroke="palette.tx2" stroke-width="3.5" stroke-linejoin="round" />
 
-    <template v-if="garment">
+    <!-- Lifted so the shoulders rest on the hanger arms and only its neck shows through the collar. -->
+    <g v-if="garment" :transform="`translate(0,${-HANG_LIFT})`">
       <g :clip-path="`url(#${ids.clip})`">
         <path :d="shape.d" :fill="garment.color" />
         <rect x="0" y="0" width="300" height="370" :fill="`url(#${ids.pat})`" />
@@ -35,14 +36,14 @@
         <g :transform="`translate(${shape.drips[0]},${shape.bottom + 10})`"><path class="drip" :d="DROP" :fill="palette.ac" /></g>
         <g :transform="`translate(${shape.drips[1]},${shape.bottom + 10})`"><path class="drip drip-late" :d="DROP" :fill="palette.ac" /></g>
       </template>
-    </template>
+    </g>
     <path v-else :d="SHAPES.tee.d" fill="none" :stroke="palette.bd2" stroke-width="2.5" stroke-dasharray="8 6" stroke-linejoin="round" />
   </svg>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import { DROP, HANGER_BAR, HANGER_HOOK, MATS, SHAPES, crest, lum, mix, wave, type Material, type StyleKey } from '../../constants/garments';
+import { DROP, HANGER_BAR, HANGER_HOOK, HANG_LIFT, MATS, SHAPES, crest, lum, mix, wave, type Material, type StyleKey } from '../../constants/garments';
 import { useTheme } from '../../composables/useTheme';
 
 const props = defineProps<{

@@ -90,4 +90,7 @@ export const wave = (y: number, x0: number) => `${crest(y, x0)} V370 H${x0} Z`;
 
 export const HANGER_HOOK = 'M140,30 a10,10 0 1 1 10,10 v14';
 export const HANGER_BAR = 'M150,54 C146,58 140,61 134,64 L82,88 C76,91 78,97 85,97 L215,97 C222,97 224,91 218,88 L166,64 C160,61 154,58 150,54 Z';
+// Garment shapes start below the hanger; drawing them this much higher puts the hanger arms
+// (y 64–97) inside every shape's shoulders or top edge.
+export const HANG_LIFT = 26;
 export const DROP = 'M0,-5 C2.5,-1 3.5,1 3.5,2.8 A3.5,3.5 0 0 1 -3.5,2.8 C-3.5,1 -2.5,-1 0,-5 Z';
