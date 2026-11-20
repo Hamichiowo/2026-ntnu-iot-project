@@ -33,14 +33,14 @@
             <!-- view -->
             <div v-if="panel === 'view'" class="view">
               <div class="view-top">
-                <span class="meta"><i :style="{ background: cur.garment.color }"></i>{{ cur.garment.material }} · {{ SHAPES[cur.garment.style].label }} · {{ cur.clip.name }}</span>
+                <span class="meta"><i :style="{ background: cur.garment.color }"></i><span class="ellipsis">{{ cur.garment.material }} · {{ SHAPES[cur.garment.style].label }} · {{ cur.clip.name }}</span></span>
                 <div class="btns">
                   <router-link :to="`/clips/${cur.clip.id}`" class="ui-btn">衣夾詳細</router-link>
                   <button type="button" class="ui-btn" @click="startEdit">編輯衣物</button>
                   <button type="button" class="ui-btn ui-btn--primary" @click="panel = 'end'">結束晾衣</button>
                 </div>
               </div>
-              <h2 class="name">{{ cur.garment.name }}</h2>
+              <h2 class="name ellipsis" :title="cur.garment.name">{{ cur.garment.name }}</h2>
               <div>
                 <span class="label">預計乾燥時間</span>
                 <span class="dry">
@@ -137,7 +137,7 @@
 
             <!-- end -->
             <div v-else-if="panel === 'end'" class="card-panel">
-              <h2>結束晾衣：{{ cur.garment.name }}</h2>
+              <h2 class="ellipsis" :title="cur.garment.name">結束晾衣：{{ cur.garment.name }}</h2>
               <button type="button" class="choice" @click="finish('dry')"><strong>已乾，收衣</strong><span>記錄結束時間，並更新這件衣物的平均乾燥時間</span></button>
               <button type="button" class="choice" @click="finish('early')"><strong>還沒乾，先收起來</strong><span>例如要下雨。保留紀錄，但不列入預測準確度</span></button>
               <button type="button" class="choice warn" @click="finish('cancel')"><strong class="wa-tx">取消這次晾衣</strong><span>開錯了，刪除這筆紀錄</span></button>
@@ -184,7 +184,7 @@
     <div id="more" class="page">
       <section v-if="cur" class="panel">
         <div class="curve-head">
-          <h2>乾燥曲線 · {{ cur.garment.name }}</h2>
+          <h2 class="ellipsis" :title="cur.garment.name">乾燥曲線 · {{ cur.garment.name }}</h2>
           <div v-if="cur.moist != null" class="legend">
             <span><i class="sw solid"></i>實測</span>
             <span><i class="sw dash"></i>預測</span>
@@ -414,9 +414,12 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 
 .side { flex: 1 1 420px; min-width: 0; }
 .view { display: flex; flex-direction: column; gap: 24px; }
-.view-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-.meta { display: inline-flex; align-items: center; gap: 10px; color: var(--tx2); }
-.meta i { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--bd2); }
+/* One row: the buttons keep their size, the meta text gives way. */
+.view-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.view-top .btns { flex: 0 0 auto; flex-wrap: nowrap; }
+.meta { display: inline-flex; align-items: center; gap: 10px; min-width: 0; color: var(--tx2); }
+.meta i { flex: 0 0 auto; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--bd2); }
+.ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btns { display: flex; flex-wrap: wrap; gap: 8px 10px; }
 .push { margin-left: auto; }
 .name { font-size: 48px; font-weight: 900; line-height: 1.15; }
@@ -476,6 +479,7 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .more-link { align-self: center; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; font-size: 15px; color: var(--mu); text-decoration: none; }
 
 .curve-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+.curve-head h2 { flex: 1 1 240px; }
 .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; font-size: 15px; color: var(--tx2); }
 .legend span { display: inline-flex; align-items: center; gap: 8px; }
 .sw { display: inline-block; width: 22px; height: 0; }
@@ -498,6 +502,8 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 
 @media (max-width: 640px) {
   .hero-inner { padding: 28px 16px 16px; }
+  .view-top { flex-wrap: wrap; }
+  .meta { flex: 1 1 100%; }
   .stage { min-height: 0; gap: 24px; }
   .name { font-size: 36px; }
   .dry-time { font-size: 64px; }
