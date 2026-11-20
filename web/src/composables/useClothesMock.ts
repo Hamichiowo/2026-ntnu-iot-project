@@ -7,11 +7,13 @@
 // 設定 → 示範資料 turns the demo off: only the real clip is listed, there is no demo
 // weather, and garments / sessions / records come from a separate, initially empty store
 // (clothes-local-v1) that holds what the user actually records. The demo store is kept, so
-// turning the demo back on restores it. Both stores move to the server later.
+// turning the demo back on restores it. The switch itself is a server setting (useSettings.ts,
+// demo_data); the local store moves to the server's /garments and /sessions API later.
 import { computed, reactive, ref, watch } from 'vue';
 import { BASE_MINUTES, type Material, type StyleKey } from '../constants/garments';
 import { DAY_MS, TAIPEI_MS } from '../utils/format';
 import { clothesLiveState } from './useClothesData';
+import { loadSettings, saveSettings, useSettings } from './useSettings';
 
 const SENSOR_KEYS = ['hx711_raw', 'ads1115_raw', 'touch_raw'] as const;
 
@@ -57,7 +59,6 @@ interface State {
 
 const DEMO_KEY = 'clothes-demo-v1';
 const LOCAL_KEY = 'clothes-local-v1';
-const ENABLED_KEY = 'clothes-demo-enabled';  // TODO: becomes a server-side setting
 const MIN = 60000;
 
 function seed(now = Date.now()): State {
@@ -107,19 +108,29 @@ function save(key: string, value: State) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* data just resets on reload */ }
 }
 
-const demoEnabled = ref((() => { try { return localStorage.getItem(ENABLED_KEY) !== 'false'; } catch { return true; } })());
+// Starts from the cached server value, then follows the server once it answers.
+const { settings } = useSettings();
+const demoEnabled = ref(settings.demo_data);
 const storeKey = () => (demoEnabled.value ? DEMO_KEY : LOCAL_KEY);
 const loadStore = () => (demoEnabled.value ? load(DEMO_KEY, seed) : load(LOCAL_KEY, empty));
 
 const state = reactive<State>(loadStore());
 watch(state, (value) => save(storeKey(), value), { deep: true });
 
-function setDemoEnabled(on: boolean) {
+// Switch which local store is shown.
+function applyDemo(on: boolean) {
   if (on === demoEnabled.value) return;
   save(storeKey(), state);  // keep the store being left
   demoEnabled.value = on;
-  try { localStorage.setItem(ENABLED_KEY, String(on)); } catch { /* setting just resets on reload */ }
   Object.assign(state, loadStore());
+}
+void loadSettings().then((value) => { if (value) applyDemo(value.demo_data); });
+
+// Stored on the server first; the page only switches once that worked. Throws on failure.
+async function setDemoEnabled(on: boolean) {
+  if (on === demoEnabled.value) return;
+  const value = await saveSettings({ demo_data: on });
+  applyDemo(value.demo_data);
 }
 
 // Clock for time-based demo values; coarse on purpose.
