@@ -44,8 +44,8 @@
               <div>
                 <span class="label">預計乾燥時間</span>
                 <span class="dry">
-                  <span v-if="cur.dryTime != null" class="dry-time num">{{ cur.dryText }}</span>
-                  <span class="left">{{ cur.leftText }}</span>
+                  <span class="dry-time num" :class="{ none: cur.dryTime == null }">{{ cur.dryText }}</span>
+                  <span class="left">{{ cur.leftText || '\u00a0' }}</span>
                 </span>
               </div>
               <div class="box-row">
@@ -53,30 +53,27 @@
                 <AirboxSelect id="ov-airbox" small />
               </div>
               <div class="tiles">
-                <div v-if="!cur.clip.live" class="tile">
+                <div class="tile">
                   <span class="label">剩餘水分</span>
-                  <span class="num big">{{ cur.moist }}<small> %</small></span>
+                  <span v-if="cur.moist != null" class="num big">{{ cur.moist }}<small> %</small></span>
+                  <span v-else class="num big muted">NONE</span>
                 </div>
-                <div v-else class="tile">
-                  <span class="label">剩餘水分</span>
-                  <span class="mid muted">尚未實作</span>
-                </div>
-                <div class="tile"><span class="label">已晾</span><span class="mid">{{ cur.elapsedText }}</span></div>
+                <div class="tile"><span class="label">已晾</span><span class="big">{{ cur.elapsedText }}</span></div>
                 <div v-for="t in airTiles" :key="t.label" class="tile">
                   <span class="label">{{ t.label }}</span>
                   <span v-if="t.value != null" class="num big">{{ formatAir(t.value) }}<small> {{ t.unit }}</small></span>
-                  <span v-else class="mid muted">無數據</span>
+                  <span v-else class="big muted">無數據</span>
                 </div>
               </div>
-              <p v-if="airNote" class="air-note muted">{{ airNote }}</p>
+              <p class="air-note muted">{{ airNote || '\u00a0' }}</p>
               <div class="weather">
                 <svg width="28" height="28" viewBox="0 0 56 56" fill="none" aria-hidden="true"><circle cx="28" cy="28" r="11" :stroke="palette.wa" stroke-width="4" /><path d="M28 6v6M28 44v6M6 28h6M44 28h6M12.4 12.4l4.2 4.2M39.4 39.4l4.2 4.2M12.4 43.6l4.2-4.2M39.4 16.6l4.2-4.2" :stroke="palette.wa" stroke-width="4" stroke-linecap="round" /></svg>
-                <span>{{ weather.summary }} · {{ clock(weather.rainAt) }} 起降雨機率 {{ weather.rainChance }}%</span>
+                <span class="ellipsis">{{ weather.summary }} · {{ clock(weather.rainAt) }} 起降雨機率 {{ weather.rainChance }}%</span>
               </div>
               <div role="status" aria-live="polite" class="alert-slot">
                 <div v-if="alerts.length" class="alert">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3 2 21h20L12 3Z" :stroke="palette.wa" stroke-width="2" stroke-linejoin="round" /><path d="M12 10v5M12 18h.01" :stroke="palette.wa" stroke-width="2" stroke-linecap="round" /></svg>
-                  <span>{{ alerts[0].msg }}<strong class="wa-tx">{{ alerts[0].action }}</strong><span v-if="alerts.length > 1" class="more">（另有 {{ alerts.length - 1 }} 則提醒）</span></span>
+                  <span class="alert-text">{{ alerts[0].msg }}<strong class="wa-tx">{{ alerts[0].action }}</strong><span v-if="alerts.length > 1" class="more">（另有 {{ alerts.length - 1 }} 則提醒）</span></span>
                 </div>
                 <div v-else class="alert calm">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" /><path d="M8 12.5l2.6 2.6L16 9.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -164,17 +161,17 @@
               <div v-for="t in airTiles" :key="t.label" class="tile">
                 <span class="label">{{ t.label }}</span>
                 <span v-if="t.value != null" class="num big">{{ formatAir(t.value) }}<small> {{ t.unit }}</small></span>
-                <span v-else class="mid muted">無數據</span>
+                <span v-else class="big muted">無數據</span>
               </div>
             </div>
-            <p v-if="airNote" class="air-note muted">{{ airNote }}</p>
+            <p class="air-note muted">{{ airNote || '\u00a0' }}</p>
             <div class="forecast">
               <span class="label">現在晾出，預計乾燥時間</span>
               <div v-for="f in idleForecast" :key="f.material" class="forecast-row"><span>{{ f.material }}</span><strong :class="f.tone">{{ f.text }}</strong></div>
             </div>
             <div class="weather">
               <svg width="28" height="28" viewBox="0 0 56 56" fill="none" aria-hidden="true"><circle cx="28" cy="28" r="11" :stroke="palette.wa" stroke-width="4" /><path d="M28 6v6M28 44v6M6 28h6M44 28h6M12.4 12.4l4.2 4.2M39.4 39.4l4.2 4.2M12.4 43.6l4.2-4.2M39.4 16.6l4.2-4.2" :stroke="palette.wa" stroke-width="4" stroke-linecap="round" /></svg>
-              <span>{{ weather.summary }} · {{ clock(weather.rainAt) }} 起降雨機率 {{ weather.rainChance }}%</span>
+              <span class="ellipsis">{{ weather.summary }} · {{ clock(weather.rainAt) }} 起降雨機率 {{ weather.rainChance }}%</span>
             </div>
           </div>
         </div>
@@ -187,7 +184,7 @@
       <section v-if="cur" class="panel">
         <div class="curve-head">
           <h2 class="ellipsis" :title="cur.garment.name">乾燥曲線 · {{ cur.garment.name }}</h2>
-          <div v-if="cur.moist != null" class="legend">
+          <div class="legend" :style="{ visibility: cur.moist != null ? 'visible' : 'hidden' }" :aria-hidden="cur.moist == null">
             <span><i class="sw solid"></i>實測</span>
             <span><i class="sw dash"></i>預測</span>
             <span><i class="sw thr"></i>乾燥門檻</span>
@@ -262,8 +259,9 @@ const items = computed(() => mock.state.sessions.flatMap((session) => {
   const done = moist != null && (moist <= 5 || (dryTime != null && dryTime <= t));
   return [{
     session, garment, clip, moist, dryTime,
-    dryText: done ? '已乾' : dryTime ? clock(dryTime) : '—',
-    leftText: done ? '可以收了' : dryTime ? `還要約 ${minutesText((dryTime - t) / MIN)}` : '乾燥預測尚未實作',
+    // NONE keeps the same size and place as a predicted time until prediction is implemented.
+    dryText: done ? '已乾' : dryTime ? clock(dryTime) : 'NONE',
+    leftText: done ? '可以收了' : dryTime ? `還要約 ${minutesText((dryTime - t) / MIN)}` : '',
     elapsedText: minutesText((t - session.startedAt) / MIN),
   }];
 }));
@@ -428,23 +426,26 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .name { font-size: 48px; font-weight: 900; line-height: 1.15; }
 .label { display: block; font-size: 15px; color: var(--mu); }
 .view > div > .label { font-size: 17px; }
-.dry { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; }
-.dry-time { font-size: 88px; font-weight: 700; line-height: 1; color: var(--ac-tx); }
-.left { font-size: 22px; color: var(--tx2); }
+/* Every slot below keeps one line and a fixed line height whatever the data is, so switching
+   garments never moves the layout (NONE / 無數據 use the same size as real values). */
+.dry { display: flex; align-items: baseline; gap: 8px 16px; min-width: 0; }
+.dry-time { flex: 0 0 auto; font-size: 88px; font-weight: 700; line-height: 1; white-space: nowrap; color: var(--ac-tx); }
+.dry-time.none { color: var(--mu); }
+.left { min-width: 0; font-size: 22px; line-height: 1.3; color: var(--tx2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .box-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .box-row label { font-size: 15px; color: var(--mu); }
-.no-curve { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 24px; border-radius: 14px; border: 1px dashed var(--bd2); color: var(--tx2); }
+.no-curve { height: 320px; box-sizing: border-box; overflow: hidden; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 24px; border-radius: 14px; border: 1px dashed var(--bd2); color: var(--tx2); }
 .no-curve p { flex: 1 1 360px; }
 .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: -12px; }
 .tile { padding: 18px 20px; border-radius: 14px; background: var(--sf2); }
-.big { font-size: 32px; font-weight: 700; }
+.big { display: block; font-size: 32px; font-weight: 700; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .big small { font-size: 18px; color: var(--mu); }
-.mid { font-size: 26px; font-weight: 700; line-height: 1.5; }
-.air-note { margin-top: -16px; font-size: 14px; }
+.air-note { margin-top: -16px; font-size: 14px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .weather { display: flex; align-items: center; gap: 12px; color: var(--tx2); }
-.alert-slot { min-height: 92px; }
-.alert { min-height: 92px; display: flex; align-items: center; gap: 14px; padding: 0 20px; border-radius: 12px; line-height: 1.45; background: var(--wa-soft); border: 1px solid var(--wa-bd); }
+.alert-slot { height: 92px; }
+.alert { height: 100%; display: flex; align-items: center; gap: 14px; padding: 0 20px; border-radius: 12px; line-height: 1.45; background: var(--wa-soft); border: 1px solid var(--wa-bd); }
 .alert svg { flex: 0 0 auto; }
+.alert-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .alert.calm { background: transparent; border: 1px dashed var(--bd2); color: var(--mu); }
 .more { color: var(--tx2); }
 
@@ -537,9 +538,8 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
   .tiles { margin-top: 0; gap: clamp(8px, 1.4vh, 12px); }
   .tile { padding: clamp(6px, 1.4vh, 18px) 20px; }
   .big { font-size: clamp(22px, 3.4vh, 32px); }
-  .mid { font-size: clamp(19px, 2.8vh, 26px); line-height: 1.4; }
   .air-note { margin-top: calc(-0.5 * clamp(8px, 1.8vh, 24px)); }
-  .alert-slot, .alert { min-height: clamp(44px, 7vh, 92px); }
+  .alert-slot { height: clamp(56px, 7vh, 92px); }
   .alert { padding: 6px 20px; }
   .card-panel { padding: clamp(16px, 2.6vh, 28px); gap: clamp(10px, 2vh, 20px); }
   .idle-title { font-size: clamp(26px, 4.4vh, 36px); }
@@ -548,9 +548,9 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 
 /* Short laptop screens: tighter still, so a two-line alert fits too. */
 @media (min-width: 901px) and (min-height: 600px) and (max-height: 780px) {
-  .view { gap: 8px; }
+  .view { gap: clamp(6px, 1.1vh, 8px); }
   .dry-time { font-size: clamp(36px, 6vh, 48px); }
-  .tile { padding: 6px 16px; }
+  .tile { padding: clamp(4px, 0.8vh, 6px) 16px; }
   .air-note { margin-top: -4px; font-size: 13px; }
   .alert { font-size: 15px; line-height: 1.35; }
 }
@@ -562,6 +562,7 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
   .stage { min-height: 0; gap: 24px; }
   .name { font-size: 36px; }
   .dry-time { font-size: 64px; }
+  .dry { flex-direction: column; align-items: flex-start; gap: 4px; }
   .idle-title { font-size: 28px; }
   .nav-btn { width: 44px; height: 44px; }
 }
