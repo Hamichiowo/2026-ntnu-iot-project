@@ -125,7 +125,7 @@
                   :class="{ on: g.id === cur.garment.id }" :disabled="g.id !== cur.garment.id && busyGarmentIds.has(g.id)"
                   :aria-pressed="g.id === cur.garment.id" @click="swapTo(g.id)">
                   <i :style="{ background: g.color }"></i>
-                  <span class="lib-text"><b>{{ g.name }}</b><small>{{ g.material }} · {{ SHAPES[g.style].label }}{{ dryCount(g.id) ? ` · 晾過 ${dryCount(g.id)} 次` : ' · 新衣物' }}</small></span>
+                  <span class="lib-text"><b class="ellipsis" :title="g.name">{{ g.name }}</b><small>{{ g.material }} · {{ SHAPES[g.style].label }}{{ dryCount(g.id) ? ` · 晾過 ${dryCount(g.id)} 次` : ' · 新衣物' }}</small></span>
                   <span class="tag">{{ g.id === cur.garment.id ? '目前' : busyGarmentIds.has(g.id) ? '晾衣中' : '' }}</span>
                 </button>
               </div>
@@ -458,13 +458,13 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .from { color: var(--tx2); text-decoration: line-through; }
 .muted-2 { color: var(--tx2); }
 .library { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; }
-.lib-item { display: flex; align-items: center; gap: 14px; min-height: 60px; padding: 8px 16px; border-radius: 12px; border: 1px solid var(--bd); background: var(--sf); text-align: left; cursor: pointer; }
+.lib-item { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; min-height: 60px; padding: 8px 16px; border-radius: 12px; border: 1px solid var(--bd); background: var(--sf); text-align: left; cursor: pointer; }
 .lib-item.on { border: 2px solid var(--ac); }
 .lib-item:disabled { opacity: 0.45; cursor: not-allowed; }
 .lib-item i { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--bd2); }
 .lib-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .lib-text b { font-size: 17px; }
-.lib-text small { font-size: 14px; color: var(--mu); }
+.lib-text small { font-size: 14px; color: var(--mu); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tag { font-size: 14px; color: var(--tx2); }
 .choice { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 16px 18px; border-radius: 12px; border: 1px solid var(--bd2); background: var(--sf); text-align: left; cursor: pointer; }
 .choice:hover { background: var(--sf2); }
