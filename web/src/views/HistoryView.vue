@@ -640,7 +640,7 @@ onMounted(() => {
 
 .chip-date.active {
   background: var(--color-primary, #2563eb);
-  color: #ffffff;
+  color: var(--color-on-primary);
   border-color: var(--color-primary, #2563eb);
 }
 
@@ -727,7 +727,7 @@ onMounted(() => {
 }
 
 .btn-link-action:hover {
-  color: #1d4ed8;
+  color: var(--ac-tx);
 }
 
 .sep-dot {
@@ -760,7 +760,7 @@ onMounted(() => {
 }
 
 .metric-chip.active {
-  background: #ffffff;
+  background: var(--sf);
   border-color: var(--color-ink);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   font-weight: 600;
@@ -802,7 +802,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #ffffff;
+  background: var(--sf);
   padding: 4px 8px;
   border-radius: 6px;
   border: 1px solid var(--color-hairline);

@@ -141,7 +141,7 @@ function onNumberChange(e: Event) {
 
 .preset-btn.active {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   border-color: var(--color-primary);
 }
 </style>

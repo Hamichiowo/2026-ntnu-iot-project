@@ -1,7 +1,7 @@
 <template>
   <div class="main-container">
     <div class="header-nav">
-      <router-link to="/" class="back-link">← 返回即時儀表板</router-link>
+      <router-link to="/devices" class="back-link">← 設備狀況</router-link>
       <div class="header-nav-right">
         <router-link :to="`/history?id=${deviceId}`" class="btn btn-primary btn-sm">
           查看歷史時序圖表 →
@@ -994,7 +994,7 @@ onUnmounted(() => {
 }
 
 .metric-box.highlight {
-  background: #ffffff;
+  background: var(--sf);
   border-color: var(--color-hairline-strong);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
@@ -1109,15 +1109,15 @@ onUnmounted(() => {
 }
 
 .action-banner.success {
-  background: #f0fdf4;
-  color: #166534;
-  border: 1px solid #bbf7d0;
+  background: var(--ok-soft);
+  color: var(--ok-tx);
+  border: 1px solid var(--ok-bd);
 }
 
 .action-banner.error {
-  background: #fef2f2;
-  color: #991b1b;
-  border: 1px solid #fecaca;
+  background: var(--err-soft);
+  color: var(--err-tx);
+  border: 1px solid var(--err-bd);
 }
 
 .action-buttons {
@@ -1128,11 +1128,11 @@ onUnmounted(() => {
 
 .btn-danger {
   color: var(--color-danger, #e11d48);
-  border-color: #fecdd3;
+  border-color: var(--err-bd);
 }
 
 .btn-danger:hover {
-  background: #ffe4e6;
+  background: var(--err-soft);
 }
 
 .coverage-header {
@@ -1170,7 +1170,7 @@ onUnmounted(() => {
 
 .date-tag-link:hover {
   background: var(--color-primary, #2563eb);
-  color: #ffffff;
+  color: var(--color-on-primary);
   border-color: var(--color-primary, #2563eb);
 }
 
