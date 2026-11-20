@@ -62,10 +62,13 @@
                   <span class="mid muted">尚未實作</span>
                 </div>
                 <div class="tile"><span class="label">已晾</span><span class="mid">{{ cur.elapsedText }}</span></div>
-                <div class="tile"><span class="label">室內溫度</span><span class="num big">{{ formatAir(air?.temp) }}<small> °C</small></span></div>
-                <div class="tile"><span class="label">室內濕度</span><span class="num big">{{ formatAir(air?.humi) }}<small> %</small></span></div>
+                <div v-for="t in airTiles" :key="t.label" class="tile">
+                  <span class="label">{{ t.label }}</span>
+                  <span v-if="t.value != null" class="num big">{{ formatAir(t.value) }}<small> {{ t.unit }}</small></span>
+                  <span v-else class="mid muted">無數據</span>
+                </div>
               </div>
-              <p v-if="air?.stale" class="air-note muted">空氣盒子超過 5 分鐘未更新</p>
+              <p v-if="airNote" class="air-note muted">{{ airNote }}</p>
               <div class="weather">
                 <svg width="28" height="28" viewBox="0 0 56 56" fill="none" aria-hidden="true"><circle cx="28" cy="28" r="11" :stroke="palette.wa" stroke-width="4" /><path d="M28 6v6M28 44v6M6 28h6M44 28h6M12.4 12.4l4.2 4.2M39.4 39.4l4.2 4.2M12.4 43.6l4.2-4.2M39.4 16.6l4.2-4.2" :stroke="palette.wa" stroke-width="4" stroke-linecap="round" /></svg>
                 <span>{{ weather.summary }} · {{ clock(weather.rainAt) }} 起降雨機率 {{ weather.rainChance }}%</span>
@@ -156,9 +159,13 @@
               <router-link to="/start" class="ui-btn ui-btn--primary ui-btn--lg">開始晾衣</router-link>
             </div>
             <div class="tiles">
-              <div class="tile"><span class="label">室內溫度</span><span class="num big">{{ formatAir(air?.temp) }}<small> °C</small></span></div>
-              <div class="tile"><span class="label">室內濕度</span><span class="num big">{{ formatAir(air?.humi) }}<small> %</small></span></div>
+              <div v-for="t in airTiles" :key="t.label" class="tile">
+                <span class="label">{{ t.label }}</span>
+                <span v-if="t.value != null" class="num big">{{ formatAir(t.value) }}<small> {{ t.unit }}</small></span>
+                <span v-else class="mid muted">無數據</span>
+              </div>
             </div>
+            <p v-if="airNote" class="air-note muted">{{ airNote }}</p>
             <div class="forecast">
               <span class="label">現在晾出，預計乾燥時間</span>
               <div v-for="f in idleForecast" :key="f.material" class="forecast-row"><span>{{ f.material }}</span><strong :class="f.tone">{{ f.text }}</strong></div>
@@ -342,10 +349,27 @@ const alerts = computed(() => {
   const w = weather.value;
   if (c.dryTime && c.dryTime > w.rainAt && w.rainAt - mock.now.value < DAY_MS / 2)
     out.push({ msg: `${c.garment.name}預計 ${clock(c.dryTime)} 才乾，但 ${clock(w.rainAt)} 起降雨機率 ${w.rainChance}%，`, action: `建議 ${clock(w.rainAt - 30 * MIN)} 前收進室內` });
-  if (air.value?.humi != null && air.value.humi > 75)
-    out.push({ msg: `室內濕度 ${formatAir(air.value.humi)}%，乾燥速度變慢，`, action: '建議開除濕機或電風扇' });
+  const humi = shownAir.value?.humi;
+  if (humi != null && humi > 75)
+    out.push({ msg: `室內濕度 ${formatAir(humi)}%，乾燥速度變慢，`, action: '建議開除濕機或電風扇' });
   if (c.clip.issue) out.push({ msg: `${c.clip.name}${c.clip.issue}，`, action: '預測可能不準' });
   return out;
+});
+
+// Air box readings older than an hour are hidden instead of shown as if current.
+const AIR_SHOW_MAX_MS = 60 * MIN;
+const shownAir = computed(() => {
+  const a = air.value;
+  return a && a.age_ms != null && a.age_ms <= AIR_SHOW_MAX_MS ? a : null;
+});
+const airTiles = computed(() => [
+  { label: '室內溫度', value: shownAir.value?.temp ?? null, unit: '°C' },
+  { label: '室內濕度', value: shownAir.value?.humi ?? null, unit: '%' },
+]);
+const airNote = computed(() => {
+  if (shownAir.value?.stale) return '空氣盒子超過 5 分鐘未更新';
+  if (air.value && air.value.age_ms != null && !shownAir.value) return '空氣盒子超過 1 小時沒有更新';
+  return '';
 });
 
 const curveRange = ref<'session' | 'day'>('session');
