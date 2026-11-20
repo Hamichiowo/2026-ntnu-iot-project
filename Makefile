@@ -8,8 +8,8 @@ s           ?= app
 TC_DIR      := $(HOME)/.cache/iot-server-typecheck
 
 .DEFAULT_GOAL := help
-.PHONY: help setup check env-check dev dev-backend up down restart ps logs \
-        test test-app test-web typecheck sim
+.PHONY: help setup show check env-check dev dev-backend up down restart ps logs \
+        test test-app test-web typecheck sim smoke
 
 help: ## 列出所有指令
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -17,6 +17,9 @@ help: ## 列出所有指令
 
 setup: ## 第一次使用：建立 .env、產生 MQTT 密碼
 	./scripts/setup.sh
+
+show: env-check ## 印出 ESP32 與 MAPS 盒子要填的 MQTT 設定
+	./scripts/setup.sh show
 
 check: env-check ## 確認 MQTT 帳密正確、列出被拒絕的裝置
 	./scripts/setup.sh check
@@ -62,3 +65,8 @@ typecheck: ## 前端型別檢查（vue-tsc 2.2 + TypeScript 5.8）
 
 sim: ## 送模擬衣夾資料（預設 60 筆，可用 make sim SIM_COUNT=10），需先啟動服務
 	$(COMPOSE) exec -T -e SIM_COUNT=$(SIM_COUNT) app bun scripts/publish-clothes.ts
+
+smoke: ## 整合測試 MQTT → DB → API（需先啟動服務並建立 tools/config.json，會寫入測試資料）
+	@test -f tools/config.json || { echo "找不到 tools/config.json，請先複製 tools/config.example.json 並填好"; exit 1; }
+	python3 tools/smoke_clothes.py
+	python3 tools/smoke_maps.py
