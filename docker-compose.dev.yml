@@ -1,0 +1,17 @@
+# 開發模式：疊在 docker-compose.yml 上使用（make dev / make dev-backend）
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+# - app 掛載原始碼並用 bun --watch，改檔自動重啟，不用重新 build
+# - 不啟動 nginx 的 web，前端改在本機跑 Vite：cd web && bun run dev（http://localhost:5173）
+# 改了 app/package.json 的依賴時，仍需加 --build 重建 image。
+services:
+  app:
+    command: ["bun", "--watch", "src/index.ts"]
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./app/src:/usr/src/app/src
+      - ./app/scripts:/usr/src/app/scripts
+      - ./app/tests:/usr/src/app/tests
+
+  web:
+    profiles: ["prod"]

@@ -23,6 +23,26 @@ docker compose up -d --build
 - MQTT 帳號、密碼都必須在 `.env` 設定（範本帳號為 `clothes`），沒設定時服務不會啟動。**ESP32 與 MAPS 盒子都必須使用同一組帳密**，否則 broker 會拒絕連線。帳密流程、所有 topic 與 TLS 設定見 [docs/MQTT.md](docs/MQTT.md)。
 - 換展示場地：開機後長按 ESP32 GPIO0 約 3 秒，手機連上設定熱點、開啟 `192.168.4.1` 即可換 Wi-Fi 與 MQTT，不需重新燒錄。使用本機 broker 時，電腦與 ESP32 需能互通，防火牆需允許 TCP 1883；ESP32 的 broker 不能填 localhost。
 
+### Makefile 快速指令（macOS / Linux）
+
+```bash
+make setup        # 第一次：建立 .env、產生 MQTT 密碼
+make up           # 正式模式：全部在 Docker，http://localhost:8088
+make dev          # 開發模式：後端在 Docker（改檔自動重啟），前端本機 Vite 即時更新，http://localhost:5173
+make test         # 後端測試 + 前端 build
+make down         # 停止容器（只停不刪，資料保留）
+make              # 列出所有指令（logs、sim、typecheck、check…）
+```
+
+開發模式用 `docker-compose.yml` 疊加 `docker-compose.dev.yml`：app 掛載 `app/src` 並以 `bun --watch` 執行，不啟動 nginx 的 web 容器，前端改由本機 Vite 跑，`/api`、`/ws` 會轉到 `localhost:3000`。改了 `app/package.json` 的依賴時，`make dev` 會重新 build。Ctrl-C 只會停掉 Vite，後端要用 `make down` 停止。
+
+Windows 沒有 make，直接執行對應的 docker compose 指令即可，例如開發模式：
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+cd web; bun install; bun run dev
+```
+
 這版沿用上游展示用認證機制，適合受信任的本機展示網路。若需要讓外網裝置透過 port forwarding 連線，可以啟用 8883 TLS（見 [docs/MQTT.md](docs/MQTT.md#6-tls-與-port-forwarding8883)）。ESP32 只能驗證公開 CA（例如 Let's Encrypt）簽發的網域憑證；用自簽憑證時，ESP32 只能留在區網連 1883。
 
 ## ESP32 快速設定
@@ -77,7 +97,7 @@ docker compose exec -T -e SIM_COUNT=60 app bun scripts/publish-clothes.ts
 發送 60 筆後自動結束；首頁應出現三條曲線。這不是硬體實測。
 
 ```powershell
-docker compose exec -T app bun test
+docker compose exec -T app bun test   # 或 make test
 python tools/smoke_clothes.py   # clothes/raw
 python tools/smoke_maps.py      # MAPS/<id>/online、status、sensor
 ```
