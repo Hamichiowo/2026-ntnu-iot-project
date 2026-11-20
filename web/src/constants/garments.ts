@@ -10,6 +10,7 @@ export interface Shape {
   bottom: number;
   drips: [number, number];
   lift: number;  // drawn this much higher so the garment sits on the hanger (arms at y 64–97)
+  clips?: [number, number];  // x of the two hanger clips holding the top edge (pants)
   d: string;
   details: string;
   folds: string;
@@ -35,7 +36,7 @@ export const SHAPES: Record<StyleKey, Shape> = {
     folds: 'M126,170 C130,220 124,270 128,316 M174,175 C170,225 176,270 172,316',
   },
   pants: {
-    label: '褲子', top: 96, bottom: 322, drips: [104, 196], lift: 4,
+    label: '褲子', top: 96, bottom: 322, drips: [104, 196], lift: 2, clips: [122, 178],
     d: 'M90,96 L210,96 L212,116 L226,312 C226,318 222,322 216,322 L170,322 C165,322 162,318 161,313 L150,176 L139,313 C138,318 135,322 130,322 L84,322 C78,322 74,318 74,312 L88,116 Z',
     details: 'M89,114 L211,114 M150,116 V158 C150,164 146,167 141,165 M98,118 C105,132 113,137 123,137 M202,118 C195,132 187,137 177,137 M108,96 V114 M192,96 V114 M150,96 V114',
     folds: 'M112,190 C110,240 108,280 104,318 M188,190 C190,240 192,280 196,318 M140,140 C142,150 146,158 150,170',

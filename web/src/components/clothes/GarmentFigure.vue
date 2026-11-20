@@ -37,7 +37,14 @@
         <g :transform="`translate(${shape.drips[1]},${shape.bottom + 10})`"><path class="drip drip-late" :d="DROP" :fill="palette.ac" /></g>
       </template>
     </g>
-    <path v-else :d="SHAPES.tee.d" fill="none" :stroke="palette.bd2" stroke-width="2.5" stroke-dasharray="8 6" stroke-linejoin="round" />
+    <!-- Clip hanger: two clips on the bar grip the waistband. -->
+    <template v-if="garment && shape.clips">
+      <g v-for="x in shape.clips" :key="x">
+        <rect :x="x - 6" y="88" width="12" height="20" rx="3" :fill="palette.tx2" :stroke="edge" stroke-width="1.5" />
+        <path :d="`M${x - 3},102 h6`" fill="none" :stroke="edge" stroke-width="1.5" stroke-linecap="round" />
+      </g>
+    </template>
+    <path v-else-if="!garment" :d="SHAPES.tee.d" fill="none" :stroke="palette.bd2" stroke-width="2.5" stroke-dasharray="8 6" stroke-linejoin="round" />
   </svg>
 </template>
 
