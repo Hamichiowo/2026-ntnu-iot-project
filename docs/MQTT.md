@@ -69,21 +69,20 @@ docker compose up -d --build
 
 `setup` 和 `show` 會印出可以直接貼上的內容。broker 位址要填**這台電腦的區網 IP**，不能填 localhost。
 
-### ESP32（`firmware/esp32-s3/main/app_config.h`，改完重新燒錄）
+### ESP32（手機設定頁，或 `firmware/esp32-s3/main/app_config.h` 改完重新燒錄）
+
+開機後長按 GPIO0 約 3 秒，手機連上 `Clothes-Setup-xxxx` 熱點、開啟 `192.168.4.1`，就能改 Wi-Fi 與 MQTT 設定（包含 TLS），不需重新燒錄。詳見[韌體操作說明](../firmware/esp32-s3/README.md)。下列欄位與設定頁的欄位一一對應：
 
 ```c
 #define APP_MQTT_HOST       "192.168.1.100"
 #define APP_MQTT_PORT       1883
-#define APP_MQTT_TLS        0               // 韌體有此選項時才需要
+#define APP_MQTT_TLS        0
 #define APP_MQTT_USERNAME   "clothes"       // = .env MQTT_USERNAME
 #define APP_MQTT_PASSWORD   "..."           // = .env MQTT_PASSWORD
 #define APP_MQTT_TOPIC      "clothes/raw"   // = .env CLOTHES_MQTT_TOPIC
 ```
 
-ESP32 要用 TLS（8883），需要同時符合兩個條件：
-
-- **韌體要支援 `APP_MQTT_TLS`**：目前在 `feat/mqtt-tls` / `feat/wifi-setup-portal` branch，還沒合進 main。
-- **broker 要用有網域、由公開 CA 簽發的憑證**（例如 Let's Encrypt）：韌體用 ESP-IDF 內建的公開 CA 清單驗證憑證，也會比對主機名稱。
+ESP32 要用 TLS（8883），broker 必須使用**有網域、由公開 CA 簽發的憑證**（例如 Let's Encrypt）。韌體用 ESP-IDF 內建的公開 CA 清單驗證憑證，也會比對主機名稱。
 
 TLS 設定方式（`APP_MQTT_HOST` 填憑證上的網域，不能填 IP）：
 

@@ -1,12 +1,14 @@
 # tools
 
-這些都是**整合測試（smoke test）**，用來確認 MQTT → server → PostgreSQL → HTTP API 整條路徑正常。測試會寫入模擬資料，而且**不會刪除**，請只在測試或展示用的資料庫執行，也不要在真實裝置正在發送時執行。
+`smoke_*.py` 是**整合測試（smoke test）**，用來確認 MQTT → server → PostgreSQL → HTTP API 整條路徑正常。測試會寫入模擬資料，而且**不會刪除**，請只在測試或展示用的資料庫執行，也不要在真實裝置正在發送時執行。
 
-| 腳本 | 測試內容 |
+| 腳本 | 用途 |
 |---|---|
 | `smoke_clothes.py` | `clothes/raw`：正常值、格式錯誤會被拒絕、null 值、history 與 limit、app 重啟後資料仍在（`local_stack` 時）、超過 10 秒沒資料會顯示 stale |
 | `smoke_maps.py` | 模擬一台 MAPS 盒子依序送 `MAPS/<id>/online`、`status`、`sensor`，並檢查 `/api/v1/devices/<id>` 與 `/sensor/latest`、格式錯誤的 payload、`online=false` 時是否轉為離線 |
 | `smoke_common.py` | 共用設定讀取，以及只用 Python 標準庫寫的 MQTT 發送（支援 TLS） |
+| `mqtt_tls_monitor.py` | 只讀的遠端 TLS broker 監看：從韌體的 `app_config.h` 讀取帳密，訂閱 clothes topic 並顯示收到的資料，不發送測試資料（不使用 `config.json`） |
+| `smoke_setup_windows.py` | ESP32 手機設定頁（SoftAP）的硬體 API 測試，需要 Windows 與 pyserial（不使用 `config.json`） |
 
 只需要 Python 3.8 以上，不用另外安裝套件。
 

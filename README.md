@@ -91,6 +91,6 @@ smoke 測試會寫測試讀值，驗證 MQTT、DB、API；clothes 測試另外�
 - `app/src/routes/clothes.ts`：查詢 API
 - `web/src/views/ClothesView.vue`：raw data 儀表板
 - `db/migrations/`：資料表
-- `tools/smoke_clothes.py`：Docker 整合驗證
+- `tools/`：整合測試與 MQTT/設定頁驗證工具，見 [tools/README.md](tools/README.md)
 
 後續如需校正、材質或乾燥預測，可由 server 使用保存的 raw data 加上實驗標註實作。
