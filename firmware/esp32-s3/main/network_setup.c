@@ -73,7 +73,7 @@ static esp_mqtt_client_handle_t client;
 static esp_netif_t *sta_netif;
 static httpd_handle_t server;
 static bool ap_open, testing, allow_publish, reconnect_wifi, portal_paused_sta;
-static volatile bool setup_pending, woke_by_setup_button;
+static volatile bool setup_pending, woke_by_setup_button, going_to_sleep;
 static volatile int acked_msg_id = -1;
 // Fast reconnect after deep sleep: remember the access point last joined (cleared on power-on).
 RTC_DATA_ATTR static uint8_t rtc_bssid[6], rtc_channel;
@@ -293,6 +293,7 @@ bool network_sleep_allowed(void)
 
 void network_prepare_sleep(void)
 {
+    going_to_sleep = true;  // keep network_worker from reconnecting MQTT meanwhile
     mqtt_stop();  // clean MQTT disconnect, so the broker does not wait for the keepalive
     reconnect_wifi = false;
     xEventGroupClearBits(events, WIFI_DOWN);
@@ -681,7 +682,7 @@ static void network_worker(void *arg)
         }
         if (ap_open && !testing && ((close_at && esp_timer_get_time()>close_at) || esp_timer_get_time()>ap_expire_at)) close_setup();
         EventBits_t bits=xEventGroupGetBits(events);
-        if (!testing && !client && valid_strings(&active) && (bits&WIFI_UP) && (!active.tls || (bits&CLOCK_OK))) {
+        if (!going_to_sleep && !testing && !client && valid_strings(&active) && (bits&WIFI_UP) && (!active.tls || (bits&CLOCK_OK))) {
             if (mqtt_start(&active)==ESP_OK) {
                 xSemaphoreTake(state_lock,portMAX_DELAY); allow_publish=true; xSemaphoreGive(state_lock);
             }

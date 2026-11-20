@@ -184,8 +184,9 @@ static int compare_i32(const void *a, const void *b)
 // highest value, so one glitch does not look like someone touching the clip either.
 static bool hx_burst(int32_t *median, int32_t *spread)
 {
-    int32_t values[HX_BURST];
+    int32_t values[HX_BURST], first;
     int count = 0;
+    read_raw(&first);  // drop the first conversion after waking: it may not have settled yet
     for (int tries = 0; tries < HX_BURST * 2 && count < HX_BURST; tries++) {
         int32_t value;
         if (read_raw(&value) && value != 8388607 && value != -8388608) values[count++] = value;
