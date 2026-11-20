@@ -16,10 +16,11 @@
         <div role="group" aria-label="預測使用的感測法" class="method">
           <span class="muted">預測使用</span>
           <div class="ui-seg">
-            <button v-for="s in SENSORS" :key="s.key" type="button" :aria-pressed="method === s.key" @click="mock.setMethod(device.id, s.key)">{{ s.method }}</button>
+            <button v-for="s in SENSORS" :key="s.key" type="button" :aria-pressed="method === s.key" @click="pickMethod(s.key)">{{ s.method }}</button>
           </div>
         </div>
       </div>
+      <p v-if="device.live && data.clipSettingError.value" class="ui-note ui-note--error" role="alert">{{ data.clipSettingError.value }}</p>
     </div>
 
     <!-- ================= real clip ================= -->
@@ -167,7 +168,7 @@ import { useRoute } from 'vue-router';
 import { Line } from 'vue-chartjs';
 import { Chart as ChartJS, LinearScale, PointElement, LineElement, Tooltip, Legend, type ChartOptions, type Plugin } from 'chart.js';
 import { useTheme } from '../composables/useTheme';
-import { PRESETS, SENSORS, useClothesHistory, withAirbox, type Field, type Sensor } from '../composables/useClothesData';
+import { PRESETS, SENSORS, useClothesHistory, withClip, type Field, type Sensor } from '../composables/useClothesData';
 import { useClothesMock, type Method } from '../composables/useClothesMock';
 import { DAY_MS, agoText, clock, formatAir, formatRaw, formatTime, fromTaipeiInput, toTaipeiInput } from '../utils/format';
 
@@ -185,7 +186,16 @@ const {
 
 const device = computed(() => mock.clipById(String(route.params.id)));
 const status = computed(() => device.value ? mock.clipStatus(device.value) : { online: false, tone: 'off' as const, label: '離線', lastSeenMs: null, uptimeMin: null });
-const method = computed<Method>(() => (device.value && mock.state.methods[device.value.id]) || 'hx711_raw');
+// The real clip's method is a server setting (clips.predict_method); the demo clips keep theirs in the demo store.
+const method = computed<Method>(() => {
+  if (!device.value) return 'hx711_raw';
+  if (device.value.live) return data.clipSettings.value?.predict_method ?? 'hx711_raw';
+  return mock.state.methods[device.value.id] || 'hx711_raw';
+});
+function pickMethod(key: Method) {
+  if (!device.value) return;
+  if (device.value.live) void data.setClipMethod(key); else mock.setMethod(device.value.id, key);
+}
 const orderedSensors = computed(() => [...SENSORS].sort((a, b) => Number(b.key === method.value) - Number(a.key === method.value)));
 
 const latestJson = computed(() => latest.value
@@ -298,7 +308,7 @@ async function downloadCsv() {
   if (end.getTime() - start.getTime() > EXPORT_MAX_DAYS * DAY_MS) return exportNotice(`一次最多匯出 ${EXPORT_MAX_DAYS} 天。`, true);
   exporting.value = true; exportNotice('');
   try {
-    const params = withAirbox(new URLSearchParams({ start: start.toISOString(), end: end.toISOString() }));
+    const params = withClip(new URLSearchParams({ start: start.toISOString(), end: end.toISOString() }));
     const response = await fetch(`/api/v1/clothes/export?${params}`, { cache: 'no-store' });
     if (!response.ok) {
       const body = await response.json().catch(() => null);

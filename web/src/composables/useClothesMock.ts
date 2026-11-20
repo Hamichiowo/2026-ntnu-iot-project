@@ -9,6 +9,8 @@
 // (clothes-local-v1) that holds what the user actually records. The demo store is kept, so
 // turning the demo back on restores it. The switch itself is a server setting (useSettings.ts,
 // demo_data); the local store moves to the server's /garments and /sessions API later.
+// Prediction method: the real clip's lives on the server (clips.predict_method, useClothesData.ts);
+// state.methods only holds the demo clips'.
 import { computed, reactive, ref, watch } from 'vue';
 import { BASE_MINUTES, type Material, type StyleKey } from '../constants/garments';
 import { DAY_MS, TAIPEI_MS } from '../utils/format';
