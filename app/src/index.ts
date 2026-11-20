@@ -20,6 +20,7 @@ import {
 } from './ws/handler';
 import { apiRouter } from './routes/api';
 import { ensureClothesSchema } from './clothes/store';
+import { ensureSettingsSchema } from './settings/store';
 
 const app = new Hono();
 
@@ -74,6 +75,7 @@ async function bootstrap() {
   await dbClient.connect();
   // Clothes raw must be persisted before the subscriber is started.
   await ensureClothesSchema();
+  await ensureSettingsSchema();
 
   // 2. Initialize WebSocket Realtime Telemetry Broadcaster
   initWebSocketBroadcaster();
