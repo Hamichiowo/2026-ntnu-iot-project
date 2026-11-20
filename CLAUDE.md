@@ -10,10 +10,11 @@ ESP32 智慧衣夾 → MQTT → 後端加上收到時間 → PostgreSQL → 網�
 | --- | --- |
 | `app/` | 後端：Bun + Hono + `Bun.sql`（PostgreSQL）+ mqtt.js。入口 `app/src/index.ts` |
 | `app/src/clothes/` | 衣夾資料：`validation.ts`（MQTT 內容檢查）、`ingest.ts`、`store.ts`（建表、查詢、CSV、空氣盒子對應） |
-| `app/src/routes/` | API，掛在 `/api/v1`。衣夾相關的在 `clothes.ts` |
+| `app/src/settings/` | 全站設定 `app_settings`（key → JSON，白名單在 `SETTING_DEFS`） |
+| `app/src/routes/` | API，掛在 `/api/v1`。衣夾相關的在 `clothes.ts`，全站設定在 `settings.ts` |
 | `app/src/mqtt/subscriber.ts` | 訂閱 `MAPS/+/sensor`、`MAPS/+/status`、`MAPS/+/online`、`clothes/raw` |
 | `app/tests/` | `bun test`，不需要資料庫（沒資料庫時應該回 503） |
-| `db/init.sql`、`db/migrations/` | MAPS 的資料表；衣夾的 `clothes_raw` 由 `ensureClothesSchema()` 在啟動時自動建立 |
+| `db/init.sql`、`db/migrations/` | MAPS 的資料表；衣夾的表（`clothes_raw`、`app_settings`）由 `ensure*Schema()` 在啟動時自動建立 |
 | `web/` | 前端：Vue 3 + Vite + Chart.js，用 nginx 提供，`/api` 和 `/ws` 轉到 app |
 | `firmware/esp32-s3/` | ESP-IDF 6.1 韌體：只會定時發佈原始值（兩次之間深度睡眠），**沒有訂閱任何 topic，也沒有歸零或校正功能** |
 | `mosquitto/` | MQTT broker 設定；`conf.d/`、`certs/` 給選用的 8883 TLS（`scripts/setup.sh tls`） |
@@ -29,6 +30,9 @@ ESP32 智慧衣夾 → MQTT → 後端加上收到時間 → PostgreSQL → 網�
 
 ### 衣夾 API（`/api/v1/clothes`）
 `GET /latest?airbox=`、`GET /history?start&end&limit&airbox=`（最多 24 小時，長範圍取平均 `bucket_seconds`）、`GET /export?start&end&airbox=`（CSV，最多 7 天）、`GET /airboxes`。
+
+### 全站設定（`/api/v1/settings`）
+`GET`、`PATCH`。目前只有 `demo_data`（預設 `true`），未知 key 回 400。寫 JSONB 時參數要用 `${JSON.stringify(v)}::text::jsonb`：直接 `::jsonb` 的話 Bun 會再編碼一次，存成 JSON 字串。
 
 ## 指令
 
@@ -61,8 +65,9 @@ make smoke       # 整合測試，需要 tools/config.json，會寫入測試資�
 
 - **主題**：`styles/main.css` 定義深色（預設）和亮色兩組 token（`--bg --sf --tx --ac --wa …`），舊的 `--color-*` 也對應到同一組 token，所以空氣盒子頁面也會跟著換色。SVG 和 Chart.js 需要實際色碼時用 `composables/useTheme.ts` 的 `palette`；兩邊的色碼要保持一致。
 - **真實資料**：`composables/useClothesData.ts`。module 層級的共用狀態，`useClothesLive()`／`useClothesHistory()` 只在有頁面使用時才輪詢。另外也提供空氣盒子選擇。
+- **全站設定**：`composables/useSettings.ts`。localStorage `clothes-settings-cache` 只用來讓第一次畫面一致，伺服器回應後以伺服器為準。
 - **示範資料**：`composables/useClothesMock.ts`（衣物、衣夾-02～08、晾衣中項目、紀錄、預測、戶外天氣），存在 localStorage `clothes-demo-v1`。**後端做好一項，就把對應的示範資料換成 API。**
-- **示範資料開關**：設定頁的「示範資料」（`demoEnabled`，localStorage `clothes-demo-enabled`，之後改存資料庫）。關閉時只列實際的衣夾-01 與空氣盒子，連線事件隱藏；衣物、晾衣中、紀錄改用另一份一開始是空的 `clothes-local-v1`（使用者實際記錄的內容，之後換成 API）；預測、誤差、戶外天氣尚未實作，顯示 `NONE`。兩份資料分開存，切換不會互相覆蓋。
+- **示範資料開關**：設定頁的「示範資料」（`demoEnabled`，存在伺服器的 `demo_data`，所有瀏覽器一樣；伺服器存好才切換，失敗會顯示錯誤）。關閉時只列實際的衣夾-01 與空氣盒子，連線事件隱藏；衣物、晾衣中、紀錄改用另一份一開始是空的 `clothes-local-v1`（使用者實際記錄的內容，之後換成 API）；預測、誤差、戶外天氣尚未實作，顯示 `NONE`。兩份資料分開存，切換不會互相覆蓋。
 - **總覽版面規則**（`views/OverviewView.vue`）：
   - 桌機（寬 ≥ 901px、高 ≥ 600px）「往下查看更多」以上固定在一個畫面內；字級、間距用 `clamp(rem, vh, rem)` 隨高度縮放，太高的面板在右欄內捲動。
   - **切換衣物時版面不能跳**：每一格固定單行、固定行高；沒資料時用同樣大小顯示 `NONE`／`無數據`，不要換成不同字級的說明文字，空的提示行也要保留位置。新增欄位時照這個做。
