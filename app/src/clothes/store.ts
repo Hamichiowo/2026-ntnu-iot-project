@@ -3,6 +3,12 @@ import type { ClothesRaw } from './validation';
 
 export const clothesState = { schemaReady: false, lastError: null as string | null };
 
+// Only one physical clip for now: everything on clothes/raw belongs to it.
+export const DEFAULT_CLIP_ID = 'c1';
+// The clip reports once a minute (every 10 s while handled) and sleeps in between,
+// so data counts as interrupted only after three missed reports.
+export const CLIP_STALE_MS = 3 * 60000;
+
 // Idempotent migration runs for both new and existing database volumes.
 export async function ensureClothesSchema(): Promise<void> {
   if (!dbClient.isConnected()) throw new Error('Database unavailable');
@@ -67,10 +73,14 @@ export function clothesCsvLine(row: CsvRow) {
 export const AIR_MAX_AGE_MS = 5 * 60000;
 export type AirReading = { timestamp: Date | string; temp: number | null; humi: number | null };
 
-// Which air box to pair with the clip: CLOTHES_AIRBOX_ID, or else the one that reported most recently.
-export async function clothesAirboxId(): Promise<string | null> {
+// Which air box to pair with a clip: the clip's own setting (clips.airbox_id), else
+// CLOTHES_AIRBOX_ID, else the one that reported most recently.
+export async function clothesAirboxId(clipId = DEFAULT_CLIP_ID): Promise<string | null> {
+  const sql = database();
+  const clips = await sql`SELECT airbox_id FROM clips WHERE id = ${clipId}`;
+  if (clips[0]?.airbox_id) return clips[0].airbox_id;
   if (process.env.CLOTHES_AIRBOX_ID) return process.env.CLOTHES_AIRBOX_ID;
-  const rows = await database()`SELECT device_id FROM sensor_data ORDER BY timestamp DESC LIMIT 1`;
+  const rows = await sql`SELECT device_id FROM sensor_data ORDER BY timestamp DESC LIMIT 1`;
   return rows[0]?.device_id ?? null;
 }
 
