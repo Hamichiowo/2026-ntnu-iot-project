@@ -10,8 +10,8 @@
         <!-- ===== someone is drying ===== -->
         <div v-if="items.length && cur" class="stage">
           <div class="carousel">
-            <svg class="line" aria-hidden="true" width="100%" height="60" viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M0,30 Q50,46 100,30" fill="none" :stroke="palette.tx2" stroke-width="2.5" vector-effect="non-scaling-stroke" /></svg>
             <div class="track-wrap">
+              <svg class="line" aria-hidden="true" width="100%" height="60" viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M0,30 Q50,46 100,30" fill="none" :stroke="palette.tx2" stroke-width="2.5" vector-effect="non-scaling-stroke" /></svg>
               <div class="track" :style="{ transform: `translateX(-${idx * 100}%)` }">
                 <div v-for="(item, i) in items" :key="item.session.id" class="slide" :aria-hidden="i !== idx">
                   <GarmentFigure :uid="item.session.id" :garment="i === idx && previewGarment ? previewGarment : item.garment"
@@ -149,8 +149,10 @@
         <!-- ===== nothing is drying (05) ===== -->
         <div v-else class="stage">
           <div class="carousel">
-            <svg class="line" aria-hidden="true" width="100%" height="60" viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M0,30 Q50,46 100,30" fill="none" :stroke="palette.tx2" stroke-width="2.5" vector-effect="non-scaling-stroke" /></svg>
-            <div class="track-wrap"><GarmentFigure uid="idle" :garment="null" /></div>
+            <div class="track-wrap">
+              <svg class="line" aria-hidden="true" width="100%" height="60" viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M0,30 Q50,46 100,30" fill="none" :stroke="palette.tx2" stroke-width="2.5" vector-effect="non-scaling-stroke" /></svg>
+              <GarmentFigure uid="idle" :garment="null" />
+            </div>
           </div>
           <div class="side view">
             <div class="idle-intro">
@@ -403,7 +405,7 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .carousel { flex: 1 1 520px; min-width: 0; position: relative; }
 .line { position: absolute; left: 0; top: 0; display: block; }
 .track-wrap { position: relative; overflow: hidden; }
-.track { display: flex; transition: transform 0.55s cubic-bezier(0.22, 0.8, 0.24, 1); }
+.track { position: relative; display: flex; transition: transform 0.55s cubic-bezier(0.22, 0.8, 0.24, 1); }  /* above the clothesline */
 .slide { flex: 0 0 100%; display: flex; justify-content: center; }
 .nav-btn { position: absolute; top: 50%; transform: translateY(-50%); width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--bd2); background: var(--sf); color: var(--tx); display: grid; place-items: center; cursor: pointer; }
 .nav-btn.prev { left: 0; } .nav-btn.next { right: 0; }
@@ -499,6 +501,58 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .last { display: flex; flex-direction: column; gap: 4px; padding: 16px; border-radius: 14px; background: var(--sf2); }
 .last-top { display: flex; justify-content: space-between; gap: 12px; font-size: 17px; font-weight: 700; }
 .avail { display: flex; justify-content: space-between; gap: 12px; padding: 16px; border-radius: 14px; border: 1px solid var(--bd); }
+
+/* Desktop: everything above 往下查看更多 fits in one screen. The two columns keep fixed
+   positions, the garment scales with the height, and tall panels scroll inside the side. */
+@media (min-width: 901px) and (min-height: 600px) {
+  .hero-inner {
+    height: calc(100dvh - 65px);  /* NavBar: 64px bar + 1px border */
+    padding: clamp(12px, 3vh, 36px) 24px 0;
+    gap: clamp(6px, 1.6vh, 20px);
+  }
+  .hero h1 { font-size: clamp(22px, 3.2vh, 28px); }
+  .page-head { flex: 0 0 auto; }
+  .stage {
+    flex: 1 1 auto; min-height: 0;
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: stretch;
+    gap: 0 clamp(32px, 4vw, 64px);
+  }
+  /* Clothesline, garment and dots stay together and are centred in the column. */
+  .carousel { display: flex; flex-direction: column; justify-content: center; min-height: 0; }
+  .track-wrap { flex: 0 1 600px; min-height: 0; }
+  .track, .slide { height: 100%; }
+  .slide { align-items: flex-start; }
+  .track-wrap :deep(.garment) { width: auto; max-width: 100%; height: 100%; aspect-ratio: 300 / 370; }
+  .dots { flex: 0 0 auto; margin-top: 0; }
+  .dots button { height: 36px; }
+  .side { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+  .side > * { margin-block: auto; }  /* centred when it fits, scrolls from the top when not */
+  .view { gap: clamp(8px, 1.8vh, 24px); }
+  .view-top .ui-btn { min-height: clamp(36px, 5vh, 44px); }
+  .name { font-size: clamp(28px, 4.6vh, 48px); }
+  .dry-time { font-size: clamp(40px, 7.5vh, 88px); }
+  .left { font-size: clamp(16px, 2.4vh, 22px); }
+  .view > div > .label { font-size: clamp(14px, 2vh, 17px); }
+  .tiles { margin-top: 0; gap: clamp(8px, 1.4vh, 12px); }
+  .tile { padding: clamp(6px, 1.4vh, 18px) 20px; }
+  .big { font-size: clamp(22px, 3.4vh, 32px); }
+  .mid { font-size: clamp(19px, 2.8vh, 26px); line-height: 1.4; }
+  .air-note { margin-top: calc(-0.5 * clamp(8px, 1.8vh, 24px)); }
+  .alert-slot, .alert { min-height: clamp(44px, 7vh, 92px); }
+  .alert { padding: 6px 20px; }
+  .card-panel { padding: clamp(16px, 2.6vh, 28px); gap: clamp(10px, 2vh, 20px); }
+  .idle-title { font-size: clamp(26px, 4.4vh, 36px); }
+  .more-link { flex: 0 0 auto; min-height: 36px; }
+}
+
+/* Short laptop screens: tighter still, so a two-line alert fits too. */
+@media (min-width: 901px) and (min-height: 600px) and (max-height: 780px) {
+  .view { gap: 8px; }
+  .dry-time { font-size: clamp(36px, 6vh, 48px); }
+  .tile { padding: 6px 16px; }
+  .air-note { margin-top: -4px; font-size: 13px; }
+  .alert { font-size: 15px; line-height: 1.35; }
+}
 
 @media (max-width: 640px) {
   .hero-inner { padding: 28px 16px 16px; }
