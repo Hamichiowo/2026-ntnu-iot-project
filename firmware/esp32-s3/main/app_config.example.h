@@ -18,5 +18,10 @@
 
 // TLS needs network time to validate the broker certificate. No time is added to payloads.
 #define APP_SNTP_SERVER     "pool.ntp.org"
-// No historical replay, QoS 0, retain=false.
-#define APP_SAMPLE_PERIOD_MS 1000
+// One report (median of 10 HX711 conversions) every APP_REPORT_PERIOD_MS, deep sleep in between.
+// While the clip is being handled the board checks again every APP_TOUCHED_PERIOD_MS.
+// QoS 1, retain=false, no historical replay. APP_DEEP_SLEEP 0 keeps the board awake (same cadence).
+// The board never sleeps while a PC is attached over USB, the setup hotspot is open, or GPIO0 is held.
+#define APP_REPORT_PERIOD_MS  60000
+#define APP_TOUCHED_PERIOD_MS 10000
+#define APP_DEEP_SLEEP        1

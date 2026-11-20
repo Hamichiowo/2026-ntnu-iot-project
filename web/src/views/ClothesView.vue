@@ -44,7 +44,7 @@
 
     <div class="meta-row">
       <span>最後接收時間：<strong>{{ latest ? formatTime(latest.timestamp) : '尚未收到資料' }}</strong></span>
-      <span>每秒一筆 · 時間由 server 記錄 · 顯示時區：台北</span>
+      <span>約每分鐘一筆（有人碰衣夾時每 10 秒）· 時間由 server 記錄 · 顯示時區：台北</span>
     </div>
 
     <section class="dry-section" aria-labelledby="dry-title">
@@ -115,7 +115,7 @@
       <form class="export-panel" @submit.prevent="downloadCsv">
         <div class="export-title">
           <strong>匯出 CSV</strong>
-          <span>原始每秒資料（不平均），附空氣盒子溫溼度，台北時間，最長 {{ EXPORT_MAX_DAYS }} 天。也可以在下方曲線上按住拖曳選取時段，再拖曳兩側直線微調。</span>
+          <span>原始資料（不再平均），附空氣盒子溫溼度，台北時間，最長 {{ EXPORT_MAX_DAYS }} 天。也可以在下方曲線上按住拖曳選取時段，再拖曳兩側直線微調。</span>
         </div>
         <label>開始<input v-model="exportStart" type="datetime-local" step="1" required aria-label="匯出開始時間（台北）" /></label>
         <label>結束<input v-model="exportEnd" type="datetime-local" step="1" required aria-label="匯出結束時間（台北）" /></label>
@@ -177,6 +177,7 @@ const historyError = ref('');
 const ingestionError = ref<string | null>(null);
 const mqttConnected = ref(false);
 const stale = ref(true);
+const staleAfterMs = ref(3 * 60000);  // from the server: no report for this long = interrupted
 const loaded = ref(false);
 const historyLoading = ref(true);
 const truncated = ref(false);
@@ -381,7 +382,7 @@ const controllers = new Set<AbortController>();
 // ===== 乾燥判斷（暫定）：參數待實驗資料確認 =====
 const CONFIG = {
   SPEED_WINDOW_MIN: 15,   // 計算變化速度用最近幾分鐘的資料
-  MIN_SAMPLES: 30,        // 至少幾筆才計算速度
+  MIN_SAMPLES: 5,         // 至少幾筆才計算速度（衣夾約每分鐘一筆）
   MIN_SPAN_MIN: 2,        // 資料至少涵蓋幾分鐘才計算速度
   DONE_WEIGHT: 95,        // 重量法乾燥程度達此 % 視為整件乾了
   DONE_SURFACE: 90,       // 電阻、電容達此 % 視為夾子附近乾了
@@ -507,7 +508,7 @@ const connectionText = computed(() => {
   if (!loaded.value) return '正在連線';
   if (!mqttConnected.value) return 'MQTT 尚未連線';
   if (!latest.value) return '等待衣夾資料';
-  return stale.value ? '資料中斷（超過 10 秒）' : '正在接收資料';
+  return stale.value ? `資料中斷（超過 ${Math.round(staleAfterMs.value / 60000)} 分鐘）` : '正在接收資料';
 });
 const formatRaw = (value: number | null | undefined) => value == null ? '—' : value.toLocaleString('en-US');
 const formatTime = (value: string) => new Date(value).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
@@ -520,8 +521,9 @@ const timeTick = (value: number) => {
 function chartData(sensor: Sensor) {
   const points: { x: number; y: number | null }[] = [];
   let previous: number | undefined;
-  // Break the line on a gap longer than ~3 samples (1 s raw, or one averaged bucket).
-  const gapMs = Math.max(3000, bucketSeconds.value * 2500);
+  // Break the line only where data was interrupted (the clip reports about once a minute),
+  // or across more than ~2 averaged buckets.
+  const gapMs = Math.max(staleAfterMs.value, bucketSeconds.value * 2500);
   for (const record of records.value) {
     const time = new Date(record.timestamp).getTime();
     if (previous !== undefined && time - previous > gapMs) points.push({ x: previous + 1, y: null });
@@ -608,6 +610,7 @@ async function loadLatest() {
     const data = await request(`/api/v1/clothes/latest${query ? `?${query}` : ''}`);
     if (stopped || choice !== airboxChoice.value) return;  // the user switched air box meanwhile
     latest.value = data.data; stale.value = data.stale;
+    if (typeof data.stale_after_ms === 'number') staleAfterMs.value = data.stale_after_ms;
     mqttConnected.value = data.mqtt_connected; ingestionError.value = data.ingestion_error;
     air.value = data.air ?? null;
     error.value = ''; loaded.value = true;
