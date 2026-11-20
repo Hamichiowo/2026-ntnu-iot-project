@@ -20,8 +20,8 @@
               </div>
             </div>
             <template v-if="items.length > 1">
-              <button type="button" class="nav-btn prev" aria-label="上一件" @click="go(idx - 1)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
-              <button type="button" class="nav-btn next" aria-label="下一件" @click="go(idx + 1)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+              <button type="button" class="nav-btn prev" aria-label="上一件" :disabled="idx === 0" @click="go(idx - 1)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+              <button type="button" class="nav-btn next" aria-label="下一件" :disabled="idx === items.length - 1" @click="go(idx + 1)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
             </template>
             <div class="dots">
               <button v-for="(item, i) in items" :key="item.session.id" type="button" :aria-label="`切換到${item.garment.name}`"
@@ -285,8 +285,8 @@ const panel = ref<Panel>('view');
 const draft = ref<GarmentDraft | null>(null);
 const isNewGarment = ref(false);
 function go(i: number) {
-  const n = items.value.length;
-  idx.value = ((i % n) + n) % n;
+  // Stops at the first and last garment instead of wrapping around.
+  idx.value = Math.max(0, Math.min(items.value.length - 1, i));
   closePanel();
 }
 function closePanel() { panel.value = 'view'; draft.value = null; isNewGarment.value = false; }
@@ -409,6 +409,7 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .slide { flex: 0 0 100%; display: flex; justify-content: center; }
 .nav-btn { position: absolute; top: 50%; transform: translateY(-50%); width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--bd2); background: var(--sf); color: var(--tx); display: grid; place-items: center; cursor: pointer; }
 .nav-btn.prev { left: 0; } .nav-btn.next { right: 0; }
+.nav-btn:disabled { opacity: 0.3; cursor: default; }
 .dots { display: flex; justify-content: center; gap: 2px; margin-top: 8px; }
 .dots button { width: 44px; height: 44px; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; }
 .dots span { display: block; width: 8px; height: 8px; border-radius: 4px; background: var(--bd2); transition: width 0.3s; }
