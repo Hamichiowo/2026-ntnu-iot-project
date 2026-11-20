@@ -15,9 +15,6 @@
       </nav>
 
       <div class="actions">
-        <span class="mqtt" :class="mqttConnected ? 'on' : 'off'" role="status">
-          <i></i>{{ mqttConnected ? 'MQTT 已連線' : loaded ? 'MQTT 未連線' : '連線中' }}
-        </span>
         <router-link to="/settings" class="icon-btn" aria-label="系統設定" title="系統設定">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" />
@@ -36,11 +33,9 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router';
 import { useTheme } from '../composables/useTheme';
-import { useClothesLive } from '../composables/useClothesData';
 
 const route = useRoute();
 const { isLight, toggle } = useTheme();
-const { mqttConnected, loaded } = useClothesLive();
 
 // Clip detail (/clips/:id) and air box detail (/devices/:id) both live under 設備狀況.
 const items = [
@@ -61,15 +56,11 @@ const items = [
 .nav-item:hover { color: var(--tx); }
 .nav-item.active { color: var(--tx); font-weight: 700; border-bottom-color: var(--ac); }
 .actions { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 14px; color: var(--tx2); padding: 10px 0; }
-.mqtt { display: inline-flex; align-items: center; gap: 8px; margin-right: 8px; }
-.mqtt i { width: 8px; height: 8px; background: var(--ac); }
-.mqtt.off i { background: var(--wa); }
 .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--bd); background: transparent; color: var(--tx); cursor: pointer; text-decoration: none; }
 .icon-btn:hover { background: var(--sf2); }
 @media (max-width: 900px) {
   .bar { gap: 0 16px; padding: 0 16px; }
   .nav { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; }
   .nav-item { min-height: 52px; padding: 0 14px; white-space: nowrap; }
-  .mqtt { display: none; }
 }
 </style>

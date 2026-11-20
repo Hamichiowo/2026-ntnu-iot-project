@@ -194,7 +194,8 @@ const liveState = {
   airboxes, defaultAirboxId, airboxChoice, airboxOptions, connectionTone, connectionText,
 };
 
-// Read-only access without registering a consumer (the header always keeps the live poll running).
+// Read-only access without registering a consumer; it only updates while a page uses
+// useClothesLive() or useClothesHistory().
 export const clothesLiveState = liveState;
 
 export function useClothesLive() {
