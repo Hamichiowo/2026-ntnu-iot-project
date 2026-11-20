@@ -16,8 +16,8 @@
     <path :d="HANGER_HOOK" fill="none" :stroke="palette.tx2" stroke-width="3.5" stroke-linecap="round" />
     <path :d="HANGER_BAR" fill="none" :stroke="palette.tx2" stroke-width="3.5" stroke-linejoin="round" />
 
-    <!-- Lifted so the shoulders rest on the hanger arms and only its neck shows through the collar. -->
-    <g v-if="garment" :transform="`translate(0,${-HANG_LIFT})`">
+    <!-- Tops are lifted so the shoulders rest on the hanger arms; pants and towels fold over its bar. -->
+    <g v-if="garment" :transform="`translate(0,${-shape.lift})`">
       <g :clip-path="`url(#${ids.clip})`">
         <path :d="shape.d" :fill="garment.color" />
         <rect x="0" y="0" width="300" height="370" :fill="`url(#${ids.pat})`" />
@@ -43,7 +43,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import { DROP, HANGER_BAR, HANGER_HOOK, HANG_LIFT, MATS, SHAPES, crest, lum, mix, wave, type Material, type StyleKey } from '../../constants/garments';
+import { DROP, HANGER_BAR, HANGER_HOOK, MATS, SHAPES, crest, lum, mix, wave, type Material, type StyleKey } from '../../constants/garments';
 import { useTheme } from '../../composables/useTheme';
 
 const props = defineProps<{
