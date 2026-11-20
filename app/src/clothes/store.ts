@@ -110,7 +110,7 @@ export function attachAir<T extends CsvRow>(rows: T[], air: AirReading[], maxAge
   return rows;
 }
 
-// Raw (never averaged) rows in time order, read in pages so a week of 1 Hz data is not held in memory.
+// Raw (never averaged) rows in time order, read in pages so a week of data (1 Hz in older recordings) is not held in memory.
 export async function* clothesExportRows(start: Date, end: Date, pageSize = 5000, airboxId: string | null = null) {
   const sql = database();
   let after: { timestamp: Date | string; id: string } | null = null;

@@ -31,6 +31,10 @@ clothesRoute.get('/airboxes', async (c) => {
   })) });
 });
 
+// The clip reports once a minute (every 10 s while handled) and sleeps in between,
+// so data counts as interrupted only after three missed reports.
+export const CLIP_STALE_MS = 3 * 60000;
+
 clothesRoute.get('/latest', async (c) => {
   try {
     const airboxId = await chosenAirbox(c.req.query('airbox'));
@@ -43,7 +47,7 @@ clothesRoute.get('/latest', async (c) => {
     return c.json({
       success: true, data, server_time: now.toISOString(), age_ms: ageMs,
       air: airboxId ? { device_id: airboxId, ...reading, age_ms: airAgeMs, stale: airAgeMs === null || airAgeMs > AIR_MAX_AGE_MS } : null,
-      stale: ageMs === null || ageMs > 10000,
+      stale: ageMs === null || ageMs > CLIP_STALE_MS, stale_after_ms: CLIP_STALE_MS,
       mqtt_connected: mqttSubscriber.isConnected(),
       ingestion_error: clothesState.lastError,
     });

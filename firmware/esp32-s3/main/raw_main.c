@@ -6,12 +6,14 @@
 #include <stdarg.h>
 #include <string.h>
 #include <math.h>
+#include <sys/time.h>
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "driver/touch_sens.h"
 #include "driver/usb_serial_jtag.h"
 #include "esp_rom_sys.h"
 #include "esp_timer.h"
+#include "esp_sleep.h"
 #include "nvs_flash.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
@@ -19,8 +21,6 @@
 #include "esp_netif_sntp.h"
 #include "esp_crt_bundle.h"
 #include "network_setup.h"
-#include "freertos/event_groups.h"
-#include "freertos/queue.h"
 #include "app_config.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -32,8 +32,31 @@
 #define APP_SNTP_SERVER "pool.ntp.org"
 #endif
 
+// Reporting cadence. APP_REPORT_PERIOD_MS replaces the old 1 s APP_SAMPLE_PERIOD_MS, so an
+// existing app_config.h that still says 1000 does not turn deep sleep into a 1 s loop.
+#ifndef APP_REPORT_PERIOD_MS
+#define APP_REPORT_PERIOD_MS 60000
+#endif
+#ifndef APP_TOUCHED_PERIOD_MS
+#define APP_TOUCHED_PERIOD_MS 10000
+#endif
+#ifndef APP_DEEP_SLEEP
+#define APP_DEEP_SLEEP 1
+#endif
+_Static_assert(APP_REPORT_PERIOD_MS >= 5000 && APP_TOUCHED_PERIOD_MS >= 5000, "report periods must be at least 5 s");
+
 #define DT GPIO_NUM_4
 #define SCK GPIO_NUM_5
+#define HX_BURST 10              // conversions per report; their median is sent
+#define HX_SETTLE_US 450000      // HX711 output settles about 400 ms after power-up (10 SPS)
+#define TOUCHED_SPREAD 1000      // burst spread (counts) above this = clip is being handled
+#define CALM_REPORTS 3           // steady reports needed to leave the touched cadence
+#define NET_WAIT_MS 12000        // Wi-Fi + MQTT per wake; a full channel scan can take a few seconds
+#define PUBLISH_WAIT_MS 3000
+
+// Kept in RTC memory across deep sleep (cleared on power-on).
+RTC_DATA_ATTR static int64_t due_us;      // wall-clock time the next report is due
+RTC_DATA_ATTR static uint8_t calm_left;   // >0 while using the touched cadence
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 static i2c_master_dev_handle_t ads;
 static touch_sensor_handle_t touch_sensor;
@@ -150,61 +173,121 @@ static bool read_raw(int32_t *result)
     return true;
 }
 
-static QueueHandle_t pending;
-typedef struct {
-    char json[160];
-    int64_t sampled_us;
-} packet_t;
-
-static void publish_task(void *arg)
+static int compare_i32(const void *a, const void *b)
 {
-    packet_t packet;
-    for (;;) {
-        if (xQueueReceive(pending, &packet, portMAX_DELAY) == pdTRUE)
-            network_publish(packet.json, packet.sampled_us);
+    int32_t x = *(const int32_t *)a, y = *(const int32_t *)b;
+    return (x > y) - (x < y);
+}
+
+// Noise filter: median of a burst of conversions. Single bad reads (near-zero glitches,
+// one-sample spikes) cannot move a median. *spread is the range without the lowest and
+// highest value, so one glitch does not look like someone touching the clip either.
+static bool hx_burst(int32_t *median, int32_t *spread)
+{
+    int32_t values[HX_BURST];
+    int count = 0;
+    for (int tries = 0; tries < HX_BURST * 2 && count < HX_BURST; tries++) {
+        int32_t value;
+        if (read_raw(&value) && value != 8388607 && value != -8388608) values[count++] = value;
     }
+    if (count < 3) return false;
+    qsort(values, count, sizeof(values[0]), compare_i32);
+    *median = count % 2 ? values[count / 2]
+        : (int32_t)(((int64_t)values[count / 2 - 1] + values[count / 2]) / 2);
+    *spread = values[count - 2] - values[1];
+    return true;
+}
+
+// Median of three ADS1115 conversions.
+static bool ads_median(int16_t *result)
+{
+    int16_t values[3];
+    int count = 0;
+    for (int i = 0; i < 3; i++) {
+        int16_t value;
+        if (ads_read(&value) == ESP_OK && value != INT16_MAX && value != INT16_MIN) values[count++] = value;
+    }
+    if (!count) return false;
+    for (int i = 1; i < count; i++)
+        for (int j = i; j > 0 && values[j - 1] > values[j]; j--) {
+            int16_t swap = values[j]; values[j] = values[j - 1]; values[j - 1] = swap;
+        }
+    *result = values[count / 2];
+    return true;
+}
+
+// System time keeps running through deep sleep, so the schedule survives it.
+static int64_t wall_us(void)
+{
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    return (int64_t)now.tv_sec * 1000000LL + now.tv_usec;
 }
 
 void app_main(void)
 {
+    uint32_t wake = esp_sleep_get_wakeup_causes();
+    bool by_timer = wake & BIT(ESP_SLEEP_WAKEUP_TIMER), by_button = wake & BIT(ESP_SLEEP_WAKEUP_EXT1);
+    if (!by_timer && !by_button) { due_us = 0; calm_left = 0; }  // power-on or reset: start fresh
     usb_serial_jtag_driver_config_t usb = { .tx_buffer_size=2048, .rx_buffer_size=256 };
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb));
     ESP_ERROR_CHECK(nvs_flash_init());
-    pending = xQueueCreate(1, sizeof(packet_t));
-    assert(pending);
-    ads_init();
-    touch_init();
     gpio_config_t input = {.pin_bit_mask=1ULL << DT, .mode=GPIO_MODE_INPUT,
                            .pull_up_en=GPIO_PULLUP_ENABLE};
     gpio_config_t clock = {.pin_bit_mask=1ULL << SCK, .mode=GPIO_MODE_OUTPUT};
     ESP_ERROR_CHECK(gpio_config(&input));
     ESP_ERROR_CHECK(gpio_config(&clock));
     gpio_set_level(SCK, 0);
-    output("\r\nRAW telemetry: HX711 GPIO4/5, ADS SDA8/SCL9, touch GPIO10\r\n");
-    network_setup_init();
-    assert(xTaskCreate(publish_task, "raw_publish", 4096, NULL, 4, NULL) == pdPASS);
-    TickType_t last = xTaskGetTickCount();
+    gpio_hold_dis(SCK);  // SCK low again: HX711 wakes from power-down and starts settling
+    int64_t hx_on_us = esp_timer_get_time();
+    network_setup_init(by_button, by_timer || by_button);  // Wi-Fi connects while we measure
+    ads_init();
+    touch_init();
+    if (!by_timer)
+        output("\r\nRAW telemetry: HX711 GPIO4/5, ADS SDA8/SCL9, touch GPIO10; every %d s (touched %d s)\r\n",
+               APP_REPORT_PERIOD_MS / 1000, APP_TOUCHED_PERIOD_MS / 1000);
+    if (!due_us) due_us = wall_us();
     for (;;) {
-        packet_t packet = {.sampled_us=esp_timer_get_time()};
-        int32_t hx;
+        int64_t settle = HX_SETTLE_US - (esp_timer_get_time() - hx_on_us);
+        if (settle > 0) vTaskDelay(pdMS_TO_TICKS(settle / 1000 + 1));
+        int32_t hx, spread = 0;
         int16_t adc;
         double touch;
-        char hx_text[24]="null", ads_text[24]="null", touch_text[24]="null";
-        if (read_raw(&hx) && hx != 8388607 && hx != -8388608)
-            snprintf(hx_text, sizeof(hx_text), "%ld", (long)hx);
-        if (ads_read(&adc) == ESP_OK && adc != INT16_MAX && adc != INT16_MIN)
-            snprintf(ads_text, sizeof(ads_text), "%d", adc);
-        if (touch_average(&touch, 1) == ESP_OK)
+        char json[160], hx_text[24]="null", ads_text[24]="null", touch_text[24]="null";
+        if (hx_burst(&hx, &spread)) snprintf(hx_text, sizeof(hx_text), "%ld", (long)hx);
+        if (ads_median(&adc)) snprintf(ads_text, sizeof(ads_text), "%d", adc);
+        if (touch_average(&touch, 4) == ESP_OK)
             snprintf(touch_text, sizeof(touch_text), "%.0f", touch);
-        snprintf(packet.json, sizeof(packet.json),
+        snprintf(json, sizeof(json),
                  "{\"hx711_raw\":%s,\"ads1115_raw\":%s,\"touch_raw\":%s}",
                  hx_text, ads_text, touch_text);
-        output("%s\r\n", packet.json);
-        if (network_ready()) xQueueOverwrite(pending, &packet);
-        // Fixed cadence, no burst/catch-up after a slow or failed measurement.
-        if (xTaskDelayUntil(&last, pdMS_TO_TICKS(APP_SAMPLE_PERIOD_MS)) == pdFALSE) {
-            last = xTaskGetTickCount();
-            vTaskDelay(1);
+        // Someone handling the clip: measure again soon until the weight is steady.
+        if (spread > TOUCHED_SPREAD) calm_left = CALM_REPORTS;
+        else if (calm_left) calm_left--;
+        output("%s spread=%ld%s\r\n", json, (long)spread, calm_left ? " touched" : "");
+        if (!network_publish_wait(json, NET_WAIT_MS, PUBLISH_WAIT_MS))
+            output("NET report not sent (Wi-Fi/MQTT unavailable)\r\n");
+
+        int64_t period = (calm_left ? APP_TOUCHED_PERIOD_MS : APP_REPORT_PERIOD_MS) * 1000LL;
+        int64_t now = wall_us();
+        due_us += period;
+        // Re-anchor after an overrun or a clock jump (e.g. the first SNTP sync).
+        if (due_us < now + 500000 || due_us > now + period) due_us = now + period;
+        // Stay awake while the setup hotspot is in use, GPIO0 is held, or a PC is attached
+        // over USB (serial monitor / "setup" command); the cadence is the same either way.
+        if (APP_DEEP_SLEEP && network_sleep_allowed() && !usb_serial_jtag_is_connected()) {
+            network_prepare_sleep();
+            // HX711 powers down while SCK stays high (> 60 us); hold it high through sleep.
+            gpio_set_level(SCK, 1);
+            gpio_hold_en(SCK);
+            int64_t left = due_us - wall_us();
+            ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(left > 100000 ? left : 100000));
+            ESP_ERROR_CHECK(network_enable_button_wakeup());
+            esp_deep_sleep_start();
         }
+        gpio_set_level(SCK, 1);  // also power the HX711 down between reports while awake
+        while (wall_us() < due_us) vTaskDelay(pdMS_TO_TICKS(100));
+        gpio_set_level(SCK, 0);
+        hx_on_us = esp_timer_get_time();
     }
 }

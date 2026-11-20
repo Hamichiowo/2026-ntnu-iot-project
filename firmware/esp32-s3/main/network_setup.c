@@ -11,6 +11,7 @@
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 #include "driver/gpio.h"
+#include "driver/rtc_io.h"
 #include "driver/usb_serial_jtag.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
@@ -20,6 +21,8 @@
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_sleep.h"
+#include "esp_attr.h"
 #include "esp_crt_bundle.h"
 #include "esp_http_server.h"
 #include "mqtt_client.h"
@@ -48,6 +51,7 @@ _Static_assert(sizeof(APP_SETUP_AP_PASSWORD) >= 9 && sizeof(APP_SETUP_AP_PASSWOR
 #define CLOCK_OK BIT2
 #define WIFI_DOWN BIT3
 #define CANCEL BIT4
+#define PUBLISHED BIT5
 #define VERSION 1
 #define SETUP_PIN GPIO_NUM_0
 
@@ -69,6 +73,13 @@ static esp_mqtt_client_handle_t client;
 static esp_netif_t *sta_netif;
 static httpd_handle_t server;
 static bool ap_open, testing, allow_publish, reconnect_wifi, portal_paused_sta;
+static volatile bool setup_pending, woke_by_setup_button;
+static volatile int acked_msg_id = -1;
+// Fast reconnect after deep sleep: remember the access point last joined (cleared on power-on).
+RTC_DATA_ATTR static uint8_t rtc_bssid[6], rtc_channel;
+RTC_DATA_ATTR static uint32_t rtc_ssid_hash;
+static bool using_ap_hint;
+static settings_t applied;  // last Wi-Fi settings handed to the driver
 static int last_reason;
 static char phase[24] = "connecting", message[192] = "正在連線";
 static char ap_ssid[33], ap_password[64], csrf[33];
@@ -136,6 +147,15 @@ static void time_synced(struct timeval *tv)
     printf("NET time synchronized\n");
 }
 
+static uint32_t ssid_hash(const char *ssid)
+{
+    uint32_t hash = 2166136261u;  // FNV-1a
+    for (; *ssid; ssid++) hash = (hash ^ (uint8_t)*ssid) * 16777619u;
+    return hash;
+}
+
+static void apply_sta_config(const settings_t *cfg);
+
 static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
@@ -143,7 +163,12 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *event = data;
         last_reason = event->reason;
+        bool was_up = xEventGroupGetBits(events) & WIFI_UP;
         xEventGroupClearBits(events, WIFI_UP | MQTT_UP);
+        if (using_ap_hint && !was_up && reconnect_wifi) {  // remembered AP gone or moved: forget it and scan all channels
+            rtc_channel = 0;
+            apply_sta_config(&applied);
+        }
         xEventGroupSetBits(events, WIFI_DOWN);
         if (reconnect_wifi) esp_wifi_connect();
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
@@ -151,10 +176,13 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         xEventGroupClearBits(events, WIFI_DOWN);
         xEventGroupSetBits(events, WIFI_UP);
         wifi_ap_record_t ap_info;
-        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK)
+        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+            memcpy(rtc_bssid, ap_info.bssid, sizeof(rtc_bssid));
+            rtc_channel = ap_info.primary;
+            rtc_ssid_hash = ssid_hash(applied.ssid);
             printf("NET Wi-Fi IP: " IPSTR " (channel %u, RSSI %d dBm)\n", IP2STR(&event->ip_info.ip),
                 ap_info.primary, ap_info.rssi);
-        else printf("NET Wi-Fi IP: " IPSTR "\n", IP2STR(&event->ip_info.ip));
+        } else printf("NET Wi-Fi IP: " IPSTR "\n", IP2STR(&event->ip_info.ip));
         // Restart SNTP on every new IP until synced: a request sent on a previous network
         // (or lost on a weak link) must not leave the clock waiting for lwIP's backoff.
         if (!(xEventGroupGetBits(events) & CLOCK_OK)) esp_netif_sntp_start();
@@ -168,6 +196,9 @@ static void mqtt_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     if (id == MQTT_EVENT_CONNECTED) {
         xEventGroupSetBits(events, MQTT_UP);
         printf("NET MQTT connected\n");
+    } else if (id == MQTT_EVENT_PUBLISHED) {
+        acked_msg_id = event->msg_id;
+        xEventGroupSetBits(events, PUBLISHED);
     } else if (id == MQTT_EVENT_DISCONNECTED || id == MQTT_EVENT_ERROR) {
         xEventGroupClearBits(events, MQTT_UP);
         if (id==MQTT_EVENT_ERROR && event->error_handle) {
@@ -229,19 +260,61 @@ bool network_ready(void)
     return ready && ((xEventGroupGetBits(events) & (WIFI_UP | MQTT_UP)) == (WIFI_UP | MQTT_UP));
 }
 
-void network_publish(const char *json, int64_t sampled_us)
+bool network_publish_wait(const char *json, int network_ms, int ack_ms)
 {
-    if (!network_ready() || esp_timer_get_time()-sampled_us > APP_SAMPLE_PERIOD_MS*1000LL) return;
+    int64_t end = esp_timer_get_time() + network_ms * 1000LL;
+    while (!network_ready()) {
+        if (esp_timer_get_time() > end) return false;
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    int id = -1;
     xSemaphoreTake(mqtt_lock, portMAX_DELAY);
     if (client && network_ready()) {
-        esp_mqtt_client_publish(client, active.topic, json, 0, 0, 0);
+        xEventGroupClearBits(events, PUBLISHED);
+        id = esp_mqtt_client_publish(client, active.topic, json, 0, 1, 0);
     }
     xSemaphoreGive(mqtt_lock);
+    if (id < 0) return false;
+    end = esp_timer_get_time() + ack_ms * 1000LL;
+    while (esp_timer_get_time() < end) {
+        if ((xEventGroupWaitBits(events, PUBLISHED, pdTRUE, pdFALSE, pdMS_TO_TICKS(50)) & PUBLISHED) &&
+                acked_msg_id == id) return true;
+    }
+    return false;
+}
+
+bool network_sleep_allowed(void)
+{
+    xSemaphoreTake(state_lock, portMAX_DELAY);
+    bool busy = ap_open || testing || setup_pending || !valid_strings(&active);
+    xSemaphoreGive(state_lock);
+    return !busy && gpio_get_level(SETUP_PIN);
+}
+
+void network_prepare_sleep(void)
+{
+    mqtt_stop();  // clean MQTT disconnect, so the broker does not wait for the keepalive
+    reconnect_wifi = false;
+    xEventGroupClearBits(events, WIFI_DOWN);
+    if (esp_wifi_disconnect() == ESP_OK)
+        xEventGroupWaitBits(events, WIFI_DOWN, pdFALSE, pdTRUE, pdMS_TO_TICKS(300));
+    esp_wifi_stop();
+}
+
+esp_err_t network_enable_button_wakeup(void)
+{
+    // GPIO0 (BOOT) pressed = low wakes the board; holding it 3 s then opens the setup hotspot.
+    // Keep RTC peripherals powered: the GPIO0 pull-up and the HX711 SCK hold need them (a few uA).
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+    rtc_gpio_pullup_en(SETUP_PIN);
+    rtc_gpio_pulldown_dis(SETUP_PIN);
+    return esp_sleep_enable_ext1_wakeup_io(1ULL << SETUP_PIN, ESP_EXT1_WAKEUP_ANY_LOW);
 }
 
 static void apply_sta_config(const settings_t *cfg)
 {
     wifi_config_t wifi = {0};
+    if (cfg != &applied) applied = *cfg;
     memcpy(wifi.sta.ssid, cfg->ssid, strlen(cfg->ssid));
     memcpy(wifi.sta.password, cfg->wifi_password, strlen(cfg->wifi_password));
     // Campus/dorm SSIDs have many BSSIDs. Fast scan joins the first one found (lowest
@@ -249,6 +322,16 @@ static void apply_sta_config(const settings_t *cfg)
     wifi.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
     wifi.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
     wifi.sta.failure_retry_cnt = 2;
+    // After deep sleep, go straight to the access point used last time (skips a multi-second
+    // all-channel scan). If it fails, the disconnect handler retries with a full scan.
+    using_ap_hint = rtc_channel && rtc_ssid_hash == ssid_hash(cfg->ssid);
+    if (using_ap_hint) {
+        wifi.sta.channel = rtc_channel;
+        memcpy(wifi.sta.bssid, rtc_bssid, sizeof(rtc_bssid));
+        wifi.sta.bssid_set = true;
+        wifi.sta.scan_method = WIFI_FAST_SCAN;
+        wifi.sta.failure_retry_cnt = 1;
+    }
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi));
 }
 
@@ -504,6 +587,7 @@ static esp_err_t close_post(httpd_req_t *req)
 static void open_setup(void)
 {
     if (ap_open) {
+        setup_pending=false;
         printf("SETUP SSID=%s PASSWORD=%s URL=http://192.168.4.1\n",ap_ssid,ap_password);
         return;
     }
@@ -533,7 +617,7 @@ static void open_setup(void)
         {.uri="/api/close",.method=HTTP_POST,.handler=close_post},
     };
     for (size_t i=0;i<sizeof(handlers)/sizeof(handlers[0]);i++) ESP_ERROR_CHECK(httpd_register_uri_handler(server,&handlers[i]));
-    ap_open=true; ap_expire_at=esp_timer_get_time()+600000000LL;
+    ap_open=true; setup_pending=false; ap_expire_at=esp_timer_get_time()+600000000LL;
     status_set("setup","請用手機連接設定熱點，開啟 http://192.168.4.1");
     // Printed only over the physical USB console, never returned by the web API.
     printf("SETUP SSID=%s PASSWORD=%s URL=http://192.168.4.1\n",ap_ssid,ap_password);
@@ -602,7 +686,7 @@ static void network_worker(void *arg)
                 xSemaphoreTake(state_lock,portMAX_DELAY); allow_publish=true; xSemaphoreGive(state_lock);
             }
         }
-        if (!ap_open && network_ready() && strcmp(phase,"online")) status_set("online","Wi-Fi 與 MQTT 正常，每秒傳送原始資料。");
+        if (!ap_open && network_ready() && strcmp(phase,"online")) status_set("online","Wi-Fi 與 MQTT 正常，定時傳送原始資料。");
     }
 }
 
@@ -610,21 +694,23 @@ static void button_worker(void *arg)
 {
     gpio_config_t pin={.pin_bit_mask=1ULL<<SETUP_PIN,.mode=GPIO_MODE_INPUT,.pull_up_en=GPIO_PULLUP_ENABLE};
     ESP_ERROR_CHECK(gpio_config(&pin));
-    bool released=false, fired=false;
-    int64_t pressed_at=0;
+    // Released at boot is required so a GPIO0 held through reset (download mode) is ignored;
+    // a deep-sleep wake by the button counts as pressed since boot instead.
+    bool released=woke_by_setup_button, fired=false;
+    int64_t pressed_at=woke_by_setup_button ? 1 : 0;
     char input[16]={0}; size_t used=0;
     for (;;) {
         if (gpio_get_level(SETUP_PIN)) { released=true; pressed_at=0; fired=false; }
         else if (released && !fired) {
             if (!pressed_at) pressed_at=esp_timer_get_time();
             if (esp_timer_get_time()-pressed_at>=3000000) {
-                command_t cmd={.kind=OPEN_SETUP}; xQueueSend(commands,&cmd,0); fired=true;
+                setup_pending=true; command_t cmd={.kind=OPEN_SETUP}; xQueueSend(commands,&cmd,0); fired=true;
             }
         }
         char ch;
         while (usb_serial_jtag_read_bytes(&ch,1,0)==1) {
             if (ch=='\r' || ch=='\n') {
-                if (!strcmp(input,"setup")) { command_t cmd={.kind=OPEN_SETUP}; xQueueSend(commands,&cmd,0); }
+                if (!strcmp(input,"setup")) { setup_pending=true; command_t cmd={.kind=OPEN_SETUP}; xQueueSend(commands,&cmd,0); }
                 input[0]=0; used=0;
             } else if (used<sizeof(input)-1) { input[used++]=ch; input[used]=0; }
         }
@@ -632,8 +718,10 @@ static void button_worker(void *arg)
     }
 }
 
-void network_setup_init(void)
+void network_setup_init(bool woke_by_button, bool woke_from_sleep)
 {
+    woke_by_setup_button = woke_by_button;
+    if (rtc_gpio_is_valid_gpio(SETUP_PIN)) rtc_gpio_deinit(SETUP_PIN);  // back to a normal GPIO after sleep
     state_lock=xSemaphoreCreateMutex(); mqtt_lock=xSemaphoreCreateMutex(); wifi_lock=xSemaphoreCreateMutex();
     events=xEventGroupCreate(); commands=xQueueCreate(3,sizeof(command_t));
     assert(state_lock && mqtt_lock && wifi_lock && events && commands);
@@ -662,5 +750,6 @@ void network_setup_init(void)
     assert(xTaskCreate(network_worker,"network_setup",8192,NULL,4,NULL)==pdPASS);
     assert(xTaskCreate(button_worker,"setup_button",3072,NULL,3,NULL)==pdPASS);
     if (!valid_strings(&active)) { command_t cmd={.kind=OPEN_SETUP}; xQueueSend(commands,&cmd,0); }
-    printf("NET Hold GPIO0 for 3 seconds after boot to configure; USB command: setup\n");
+    if (!woke_from_sleep)
+        printf("NET Hold GPIO0 for 3 seconds to configure (also wakes the board from sleep); USB command: setup\n");
 }

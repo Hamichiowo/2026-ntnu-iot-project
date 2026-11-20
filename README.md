@@ -35,7 +35,7 @@ docker compose up -d --build
 
 ## MQTT 約定
 
-Topic：`clothes/raw`。每秒一筆，QoS 0、retain=false，斷線不補傳歷史資料。
+Topic：`clothes/raw`。約每分鐘一筆（有人碰衣夾時每 10 秒），QoS 1、retain=false，斷線不補傳歷史資料。每筆的 hx711_raw 是 10 次讀值的中位數，兩次回報之間 ESP32 深度睡眠。
 
 ```json
 {"hx711_raw":86042,"ads1115_raw":7799,"touch_raw":31875}
@@ -53,7 +53,7 @@ Topic：`clothes/raw`。每秒一筆，QoS 0、retain=false，斷線不補傳歷
 
 ## 網頁與資料庫
 
-首頁顯示三個原始值、server 收到時間與歷史曲線：可選最近 5 分鐘、15 分鐘、1 小時、6 小時、24 小時，或自訂開始／結束時間（台北時間，一次最多 24 小時；自訂範圍不自動更新）。超過 10 秒沒新資料會提示；null 與資料中斷會讓曲線斷開。
+首頁顯示三個原始值、server 收到時間與歷史曲線：可選最近 5 分鐘、15 分鐘、1 小時、6 小時、24 小時，或自訂開始／結束時間（台北時間，一次最多 24 小時；自訂範圍不自動更新）。超過 3 分鐘沒新資料會提示；null 與資料中斷會讓曲線斷開。
 
 資料存在獨立 `clothes_raw` 表；server 啟動時自動建立表與索引，也附上 `db/migrations/001_clothes_raw.sql`。原有空氣資料表與 MQTT topics 保留。
 
