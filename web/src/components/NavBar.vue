@@ -49,13 +49,13 @@ const items = [
 <style scoped>
 .header { background: var(--hdr); border-bottom: 1px solid var(--bd); }
 .bar { max-width: 1320px; margin: 0 auto; padding: 0 24px; display: flex; flex-wrap: wrap; align-items: stretch; gap: 0 32px; min-height: 64px; }
-.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--tx); font-weight: 900; font-size: 18px; letter-spacing: 0.04em; }
+.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--tx); font-weight: 900; font-size: 1.125rem; letter-spacing: 0.04em; }
 .brand svg { color: var(--ac); }
 .nav { display: flex; flex-wrap: wrap; align-items: stretch; }
 .nav-item { display: flex; align-items: center; padding: 0 18px; min-height: 64px; text-decoration: none; color: var(--tx2); border-bottom: 3px solid transparent; }
 .nav-item:hover { color: var(--tx); }
 .nav-item.active { color: var(--tx); font-weight: 700; border-bottom-color: var(--ac); }
-.actions { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 14px; color: var(--tx2); padding: 10px 0; }
+.actions { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 0.875rem; color: var(--tx2); padding: 10px 0; }
 .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--bd); background: transparent; color: var(--tx); cursor: pointer; text-decoration: none; }
 .icon-btn:hover { background: var(--sf2); }
 @media (max-width: 900px) {

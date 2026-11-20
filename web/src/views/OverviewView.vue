@@ -398,7 +398,7 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 <style scoped>
 .hero { background: var(--sf); border-bottom: 1px solid var(--bd); }
 .hero-inner { max-width: 1320px; margin: 0 auto; padding: 36px 24px 24px; display: flex; flex-direction: column; gap: 24px; }
-.hero h1 { font-size: 28px; }
+.hero h1 { font-size: 1.75rem; }
 .stage { display: flex; flex-wrap: wrap; align-items: center; gap: 40px 64px; min-height: 620px; }
 .carousel { flex: 1 1 520px; min-width: 0; position: relative; }
 .line { position: absolute; left: 0; top: 0; display: block; }
@@ -423,24 +423,24 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btns { display: flex; flex-wrap: wrap; gap: 8px 10px; }
 .push { margin-left: auto; }
-.name { font-size: 48px; font-weight: 900; line-height: 1.15; }
-.label { display: block; font-size: 15px; color: var(--mu); }
-.view > div > .label { font-size: 17px; }
+.name { font-size: 3rem; font-weight: 900; line-height: 1.15; }
+.label { display: block; font-size: 0.9375rem; color: var(--mu); }
+.view > div > .label { font-size: 1.0625rem; }
 /* Every slot below keeps one line and a fixed line height whatever the data is, so switching
    garments never moves the layout (NONE / 無數據 use the same size as real values). */
 .dry { display: flex; align-items: baseline; gap: 8px 16px; min-width: 0; }
-.dry-time { flex: 0 0 auto; font-size: 88px; font-weight: 700; line-height: 1; white-space: nowrap; color: var(--ac-tx); }
+.dry-time { flex: 0 0 auto; font-size: 5.5rem; font-weight: 700; line-height: 1; white-space: nowrap; color: var(--ac-tx); }
 .dry-time.none { color: var(--mu); }
-.left { min-width: 0; font-size: 22px; line-height: 1.3; color: var(--tx2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.left { min-width: 0; font-size: 1.375rem; line-height: 1.3; color: var(--tx2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .box-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.box-row label { font-size: 15px; color: var(--mu); }
+.box-row label { font-size: 0.9375rem; color: var(--mu); }
 .no-curve { height: 320px; box-sizing: border-box; overflow: hidden; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 24px; border-radius: 14px; border: 1px dashed var(--bd2); color: var(--tx2); }
 .no-curve p { flex: 1 1 360px; }
 .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: -12px; }
 .tile { padding: 18px 20px; border-radius: 14px; background: var(--sf2); }
-.big { display: block; font-size: 32px; font-weight: 700; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.big small { font-size: 18px; color: var(--mu); }
-.air-note { margin-top: -16px; font-size: 14px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.big { display: block; font-size: 2rem; font-weight: 700; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.big small { font-size: 1.125rem; color: var(--mu); }
+.air-note { margin-top: -16px; font-size: 0.875rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .weather { display: flex; align-items: center; gap: 12px; color: var(--tx2); }
 .alert-slot { height: 92px; }
 .alert { height: 100%; display: flex; align-items: center; gap: 14px; padding: 0 20px; border-radius: 12px; line-height: 1.45; background: var(--wa-soft); border: 1px solid var(--wa-bd); }
@@ -450,10 +450,10 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .more { color: var(--tx2); }
 
 .card-panel { display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 20px; border: 1px solid var(--bd); background: var(--bg); }
-.card-panel h2 { font-size: 24px; }
+.card-panel h2 { font-size: 1.5rem; }
 .card-panel.warn { border-color: var(--wa-bd); background: var(--wa-card); }
 .card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-.edit-note { min-height: 24px; font-size: 15px; }
+.edit-note { min-height: 24px; font-size: 0.9375rem; }
 .changes { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 12px; background: var(--sf); }
 .change { display: flex; flex-wrap: wrap; gap: 6px 12px; }
 .change .muted:first-child { min-width: 48px; }
@@ -465,26 +465,26 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .lib-item:disabled { opacity: 0.45; cursor: not-allowed; }
 .lib-item i { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--bd2); }
 .lib-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.lib-text b { font-size: 17px; }
-.lib-text small { font-size: 14px; color: var(--mu); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tag { font-size: 14px; color: var(--tx2); }
+.lib-text b { font-size: 1.0625rem; }
+.lib-text small { font-size: 0.875rem; color: var(--mu); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag { font-size: 0.875rem; color: var(--tx2); }
 .choice { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 16px 18px; border-radius: 12px; border: 1px solid var(--bd2); background: var(--sf); text-align: left; cursor: pointer; }
 .choice:hover { background: var(--sf2); }
-.choice strong { font-size: 18px; }
-.choice span { font-size: 15px; color: var(--tx2); }
+.choice strong { font-size: 1.125rem; }
+.choice span { font-size: 0.9375rem; color: var(--tx2); }
 .choice.warn { border-color: var(--wa-bd); background: transparent; }
 .start { align-self: flex-start; }
 
 .idle-intro { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
-.idle-title { font-size: 36px; font-weight: 900; line-height: 1.2; }
+.idle-title { font-size: 2.25rem; font-weight: 900; line-height: 1.2; }
 .forecast { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; border-radius: 14px; border: 1px solid var(--bd); }
-.forecast-row { display: flex; justify-content: space-between; gap: 12px; font-size: 17px; }
+.forecast-row { display: flex; justify-content: space-between; gap: 12px; font-size: 1.0625rem; }
 
-.more-link { align-self: center; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; font-size: 15px; color: var(--mu); text-decoration: none; }
+.more-link { align-self: center; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; font-size: 0.9375rem; color: var(--mu); text-decoration: none; }
 
 .curve-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
 .curve-head h2 { flex: 1 1 240px; }
-.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; font-size: 15px; color: var(--tx2); }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; font-size: 0.9375rem; color: var(--tx2); }
 .legend span { display: inline-flex; align-items: center; gap: 8px; }
 .sw { display: inline-block; width: 22px; height: 0; }
 .sw.solid { border-top: 3px solid var(--ac); }
@@ -495,13 +495,13 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .lower { display: flex; flex-wrap: wrap; gap: 24px; }
 .grow { flex: 1 1 380px; }
 .row-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-.row-head a { font-size: 15px; }
+.row-head a { font-size: 0.9375rem; }
 .drying-row { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 14px; background: var(--sf2); border: 0; text-align: left; cursor: pointer; }
 .drying-row:hover { background: var(--grid); }
-.drying-top { display: flex; justify-content: space-between; gap: 12px; font-size: 17px; font-weight: 700; }
-.drying-top small { font-weight: 400; font-size: 14px; }
+.drying-top { display: flex; justify-content: space-between; gap: 12px; font-size: 1.0625rem; font-weight: 700; }
+.drying-top small { font-weight: 400; font-size: 0.875rem; }
 .last { display: flex; flex-direction: column; gap: 4px; padding: 16px; border-radius: 14px; background: var(--sf2); }
-.last-top { display: flex; justify-content: space-between; gap: 12px; font-size: 17px; font-weight: 700; }
+.last-top { display: flex; justify-content: space-between; gap: 12px; font-size: 1.0625rem; font-weight: 700; }
 .avail { display: flex; justify-content: space-between; gap: 12px; padding: 16px; border-radius: 14px; border: 1px solid var(--bd); }
 
 /* Desktop: everything above 往下查看更多 fits in one screen. The two columns keep fixed
@@ -512,7 +512,7 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
     padding: clamp(12px, 3vh, 36px) 24px 0;
     gap: clamp(6px, 1.6vh, 20px);
   }
-  .hero h1 { font-size: clamp(22px, 3.2vh, 28px); }
+  .hero h1 { font-size: clamp(1.375rem, 3.2vh, 1.75rem); }
   .page-head { flex: 0 0 auto; }
   .stage {
     flex: 1 1 auto; min-height: 0;
@@ -531,28 +531,28 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
   .side > * { margin-block: auto; }  /* centred when it fits, scrolls from the top when not */
   .view { gap: clamp(8px, 1.8vh, 24px); }
   .view-top .ui-btn { min-height: clamp(36px, 5vh, 44px); }
-  .name { font-size: clamp(28px, 4.6vh, 48px); }
-  .dry-time { font-size: clamp(40px, 7.5vh, 88px); }
-  .left { font-size: clamp(16px, 2.4vh, 22px); }
-  .view > div > .label { font-size: clamp(14px, 2vh, 17px); }
+  .name { font-size: clamp(1.75rem, 4.6vh, 3rem); }
+  .dry-time { font-size: clamp(2.5rem, 7.5vh, 5.5rem); }
+  .left { font-size: clamp(1rem, 2.4vh, 1.375rem); }
+  .view > div > .label { font-size: clamp(0.875rem, 2vh, 1.0625rem); }
   .tiles { margin-top: 0; gap: clamp(8px, 1.4vh, 12px); }
   .tile { padding: clamp(6px, 1.4vh, 18px) 20px; }
-  .big { font-size: clamp(22px, 3.4vh, 32px); }
+  .big { font-size: clamp(1.375rem, 3.4vh, 2rem); }
   .air-note { margin-top: calc(-0.5 * clamp(8px, 1.8vh, 24px)); }
   .alert-slot { height: clamp(56px, 7vh, 92px); }
   .alert { padding: 6px 20px; }
   .card-panel { padding: clamp(16px, 2.6vh, 28px); gap: clamp(10px, 2vh, 20px); }
-  .idle-title { font-size: clamp(26px, 4.4vh, 36px); }
+  .idle-title { font-size: clamp(1.625rem, 4.4vh, 2.25rem); }
   .more-link { flex: 0 0 auto; min-height: 36px; }
 }
 
 /* Short laptop screens: tighter still, so a two-line alert fits too. */
 @media (min-width: 901px) and (min-height: 600px) and (max-height: 780px) {
   .view { gap: clamp(6px, 1.1vh, 8px); }
-  .dry-time { font-size: clamp(36px, 6vh, 48px); }
+  .dry-time { font-size: clamp(2.25rem, 6vh, 3rem); }
   .tile { padding: clamp(4px, 0.8vh, 6px) 16px; }
-  .air-note { margin-top: -4px; font-size: 13px; }
-  .alert { font-size: 15px; line-height: 1.35; }
+  .air-note { margin-top: -4px; font-size: 0.8125rem; }
+  .alert { font-size: 0.9375rem; line-height: 1.35; }
 }
 
 @media (max-width: 640px) {
@@ -560,10 +560,10 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
   .view-top { flex-wrap: wrap; }
   .meta { flex: 1 1 100%; }
   .stage { min-height: 0; gap: 24px; }
-  .name { font-size: 36px; }
-  .dry-time { font-size: 64px; }
+  .name { font-size: 2.25rem; }
+  .dry-time { font-size: 4rem; }
   .dry { flex-direction: column; align-items: flex-start; gap: 4px; }
-  .idle-title { font-size: 28px; }
+  .idle-title { font-size: 1.75rem; }
   .nav-btn { width: 44px; height: 44px; }
 }
 </style>

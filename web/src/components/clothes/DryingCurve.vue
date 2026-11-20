@@ -106,5 +106,5 @@ const ariaLabel = computed(() => `剩餘水分從開始的 100% 降至目前 ${M
 .curve-wrap { position: relative; min-width: 640px; }
 .curve { display: block; }
 .marker { position: absolute; width: 12px; height: 12px; border-radius: 50%; border: 3px solid; background: var(--sf); transform: translate(-50%, -50%); pointer-events: none; }
-.tag { position: absolute; font-size: 15px; white-space: nowrap; pointer-events: none; }
+.tag { position: absolute; font-size: 0.9375rem; white-space: nowrap; pointer-events: none; }
 </style>

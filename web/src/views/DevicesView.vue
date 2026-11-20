@@ -193,21 +193,21 @@ const events = computed(() => {
 .dev.off { border-style: dashed; border-color: var(--bd2); background: transparent; }
 .dev.off h2 { color: var(--tx2); }
 .dev-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.dev-head h2 { font-size: 22px; }
-.real { font-size: 12px; font-weight: 500; margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: var(--ac-soft); color: var(--ac-tx); vertical-align: middle; }
+.dev-head h2 { font-size: 1.375rem; }
+.real { font-size: 0.75rem; font-weight: 500; margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: var(--ac-soft); color: var(--ac-tx); vertical-align: middle; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 16px; }
-.facts span { display: block; font-size: 14px; color: var(--mu); }
-.facts b { font-size: 18px; }
-.facts .raw { font-size: 15px; }
+.facts span { display: block; font-size: 0.875rem; color: var(--mu); }
+.facts b { font-size: 1.125rem; }
+.facts .raw { font-size: 0.9375rem; }
 .issue { padding: 14px 16px; border-radius: 12px; background: var(--wa-soft); }
 .muted-2 { color: var(--tx2); }
 .dev-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 16px; border-top: 1px solid var(--bd); margin-top: auto; flex-wrap: wrap; }
-.dev-foot code { font-size: 14px; }
+.dev-foot code { font-size: 0.875rem; }
 .foot-btns { display: flex; gap: 8px; }
 .section { display: flex; flex-direction: column; gap: 16px; }
 .row-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-.section-title { font-size: 24px; }
-.stream { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+.section-title { font-size: 1.5rem; }
+.stream { display: inline-flex; align-items: center; gap: 8px; font-size: 0.875rem; }
 .stream i { width: 8px; height: 8px; background: var(--wa); }
 .stream i.on { background: var(--ac); }
 .air-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }

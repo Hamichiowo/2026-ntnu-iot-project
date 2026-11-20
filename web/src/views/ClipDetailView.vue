@@ -438,12 +438,12 @@ const sessionStart = computed(() => {
 
 <style scoped>
 .head { display: flex; flex-direction: column; gap: 12px; }
-.back { align-self: flex-start; font-size: 15px; color: var(--tx2); text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; }
+.back { align-self: flex-start; font-size: 0.9375rem; color: var(--tx2); text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; }
 .back:hover { color: var(--tx); }
 .title { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
-.conn { font-size: 14px; }
+.conn { font-size: 0.875rem; }
 .method { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.method > span { font-size: 15px; }
+.method > span { font-size: 0.9375rem; }
 
 
 .layout { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
@@ -453,25 +453,25 @@ const sessionStart = computed(() => {
 .range-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .inline-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
 .inline-form .ui-field { flex: 1 1 200px; }
-.hint { font-size: 14px; }
-.sel-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 15px; }
+.hint { font-size: 0.875rem; }
+.sel-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 0.9375rem; }
 .empty { align-items: center; text-align: center; padding: 64px 20px; border-style: dashed; }
 
 .sensor.chosen { border-color: var(--ac-bd); }
 .sensor-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .sensor-head h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .sensor-head h2 i { width: 12px; height: 12px; flex: 0 0 auto; }
-.sensor-head h2 small { font-size: 14px; font-weight: 400; }
-.chosen-tag { font-style: normal; font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 999px; background: var(--ac-soft); color: var(--ac-tx); }
-.reading { font-size: 36px; font-weight: 700; line-height: 1; }
-.reading small { font-size: 16px; color: var(--mu); font-weight: 400; }
+.sensor-head h2 small { font-size: 0.875rem; font-weight: 400; }
+.chosen-tag { font-style: normal; font-size: 0.75rem; font-weight: 500; padding: 2px 8px; border-radius: 999px; background: var(--ac-soft); color: var(--ac-tx); }
+.reading { font-size: 2.25rem; font-weight: 700; line-height: 1; }
+.reading small { font-size: 1rem; color: var(--mu); font-weight: 400; }
 .chart { height: 195px; cursor: crosshair; user-select: none; }
 .chart :deep(canvas) { touch-action: pan-y; }  /* horizontal finger drags select; vertical ones still scroll */
-.small { font-size: 14px; }
+.small { font-size: 0.875rem; }
 .demo-chart { display: block; }
 .axis { display: flex; justify-content: space-between; gap: 12px; }
 
-.json { margin: 0; padding: 16px; border-radius: 12px; background: var(--code); font-size: 14px; line-height: 1.8; color: var(--tx2); overflow-x: auto; white-space: pre; }
+.json { margin: 0; padding: 16px; border-radius: 12px; background: var(--code); font-size: 0.875rem; line-height: 1.8; color: var(--tx2); overflow-x: auto; white-space: pre; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .err { color: var(--err-tx); }
 .kv { display: flex; flex-direction: column; gap: 10px; }

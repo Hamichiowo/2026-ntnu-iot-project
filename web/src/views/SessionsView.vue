@@ -147,7 +147,7 @@ function resetDemo() {
 .side-col { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 24px; }
 .ui-table td { padding: 16px 12px; }
 .strong { font-weight: 700; }
-.strong small { font-weight: 400; font-size: 13px; margin-left: 4px; }
+.strong small { font-weight: 400; font-size: 0.8125rem; margin-left: 4px; }
 .bar-row { display: flex; flex-direction: column; gap: 8px; }
 .bar-top { display: flex; justify-content: space-between; gap: 12px; }
 .thick { height: 10px; border-radius: 5px; }

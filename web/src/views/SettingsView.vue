@@ -113,12 +113,12 @@ onMounted(() => {
 }
 
 .page-title {
-  font-size: 24px;
+  font-size: 1.5rem;
   font-weight: 700;
 }
 
 .page-desc {
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--color-body);
 }
 
@@ -129,7 +129,7 @@ onMounted(() => {
 }
 
 .section-title {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 600;
   margin-bottom: 16px;
 }
@@ -144,7 +144,7 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 14px;
+  font-size: 0.875rem;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--color-hairline);
 }

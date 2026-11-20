@@ -400,7 +400,7 @@ defineExpose({
   align-items: center;
   justify-content: center;
   color: var(--color-muted);
-  font-size: 14px;
+  font-size: 0.875rem;
   background: var(--color-canvas-subtle, #f9fafb);
   border-radius: 8px;
   border: 1px dashed var(--color-hairline-strong);
