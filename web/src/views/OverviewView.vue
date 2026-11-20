@@ -52,19 +52,6 @@
                 <label for="ov-airbox">室內環境來自</label>
                 <AirboxSelect id="ov-airbox" small />
               </div>
-              <div v-if="cur.clip.live" class="raw" aria-label="衣夾-01 即時感測資料">
-                <div class="raw-head">
-                  <span class="label">即時感測（原始計數）</span>
-                  <span class="status" :class="clipOnline ? 'status--on' : 'status--off'"><i></i>{{ clipOnline ? `${lastSeenText} 收到` : connectionText }}</span>
-                </div>
-                <div class="raw-grid">
-                  <div v-for="s in SENSORS" :key="s.key" class="raw-cell">
-                    <span class="label"><i :style="{ background: palette[s.color] }"></i>{{ s.method }}</span>
-                    <span class="num raw-val">{{ formatRaw(latest?.[s.key]) }}</span>
-                    <span v-if="latest && latest[s.key] === null" class="wa-tx raw-note">本筆讀取失敗</span>
-                  </div>
-                </div>
-              </div>
               <div class="tiles">
                 <div v-if="!cur.clip.live" class="tile">
                   <span class="label">剩餘水分</span>
@@ -230,7 +217,7 @@
         </section>
       </div>
 
-      <p class="demo-note">示範資料：衣物、晾衣紀錄、衣夾-02～05 的剩餘水分與乾燥預測、戶外天氣目前為前端模擬；衣夾-01 的感測資料、MQTT 狀態與空氣盒子溫濕度為實際資料。衣夾-01 的剩餘水分與乾燥預測尚未實作。</p>
+      <p class="demo-note">示範資料：衣物、晾衣紀錄、衣夾-02～05 的剩餘水分與乾燥預測、戶外天氣目前為前端模擬；空氣盒子溫濕度為實際資料。衣夾-01 的剩餘水分與乾燥預測尚未實作，原始感測值請到衣夾詳細查看。</p>
     </div>
   </div>
 </template>
@@ -243,12 +230,12 @@ import DryingCurve from '../components/clothes/DryingCurve.vue';
 import AirboxSelect from '../components/clothes/AirboxSelect.vue';
 import { BASE_MINUTES, SHAPES, colorName, type Material } from '../constants/garments';
 import { useTheme } from '../composables/useTheme';
-import { SENSORS, useClothesLive } from '../composables/useClothesData';
+import { useClothesLive } from '../composables/useClothesData';
 import { dryAt, moistureAt, useClothesMock, type GarmentDraft } from '../composables/useClothesMock';
-import { DAY_MS, TAIPEI_MS, agoText, clock, dayLabel, formatAir, formatRaw, minutesText, shortDuration } from '../utils/format';
+import { DAY_MS, TAIPEI_MS, clock, dayLabel, formatAir, minutesText, shortDuration } from '../utils/format';
 
 const { palette } = useTheme();
-const { air, latest, clipOnline, connectionText } = useClothesLive();
+const { air } = useClothesLive();
 const mock = useClothesMock();
 const { weather, busyGarmentIds, dryCount, garmentById, clipById } = mock;
 const MIN = 60000;
@@ -362,7 +349,6 @@ const alerts = computed(() => {
 });
 
 const curveRange = ref<'session' | 'day'>('session');
-const lastSeenText = computed(() => latest.value ? agoText(mock.now.value - new Date(latest.value.timestamp).getTime()) : '—');
 
 // ----- idle state
 const idleForecast = computed(() => (['聚酯纖維', '棉', '牛仔布'] as Material[]).map((material) => {
@@ -417,15 +403,6 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .left { font-size: 22px; color: var(--tx2); }
 .box-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .box-row label { font-size: 15px; color: var(--mu); }
-.raw { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; border-radius: 14px; border: 1px solid var(--bd); }
-.raw-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
-.raw-head .status { font-size: 14px; font-weight: 500; }
-.raw-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.raw-cell { display: flex; flex-direction: column; min-width: 0; }
-.raw-cell .label { display: inline-flex; align-items: center; gap: 6px; }
-.raw-cell .label i { width: 8px; height: 8px; }
-.raw-val { font-size: 24px; font-weight: 700; overflow-wrap: anywhere; }
-.raw-note { font-size: 13px; }
 .no-curve { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 24px; border-radius: 14px; border: 1px dashed var(--bd2); color: var(--tx2); }
 .no-curve p { flex: 1 1 360px; }
 .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: -12px; }
