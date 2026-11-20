@@ -35,14 +35,13 @@ const props = defineProps<{
   now: number;
   moistNow: number;          // remaining moisture % at `now`
   dryTime: number | null;    // when it should reach the dry threshold, null = unknown
-  range: 'session' | 'day';
 }>();
 
 const { palette } = useTheme();
 const HOUR = 3600000;
 
+// Always this drying session: from the start to a bit past the predicted dry time.
 const window = computed(() => {
-  if (props.range === 'day') return { t0: props.now - 12 * HOUR, t1: props.now + 12 * HOUR };
   const end = Math.max(props.dryTime ?? props.now, props.now);
   const span = Math.max(end - props.startedAt, HOUR);
   return { t0: props.startedAt, t1: end + span * 0.25 };

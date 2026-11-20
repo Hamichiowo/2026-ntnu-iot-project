@@ -188,14 +188,10 @@
             <span><i class="sw solid"></i>實測</span>
             <span><i class="sw dash"></i>預測</span>
             <span><i class="sw thr"></i>乾燥門檻</span>
-            <div class="ui-seg" role="group" aria-label="時間範圍">
-              <button type="button" :aria-pressed="curveRange === 'session'" @click="curveRange = 'session'">本次晾衣</button>
-              <button type="button" :aria-pressed="curveRange === 'day'" @click="curveRange = 'day'">24 小時</button>
-            </div>
           </div>
         </div>
         <div v-if="cur.moist != null" class="curve-scroll">
-          <DryingCurve :started-at="cur.session.startedAt" :now="mock.now.value" :moist-now="cur.moist" :dry-time="cur.dryTime" :range="curveRange" />
+          <DryingCurve :started-at="cur.session.startedAt" :now="mock.now.value" :moist-now="cur.moist" :dry-time="cur.dryTime" />
         </div>
         <div v-else class="no-curve">
           <p>{{ cur.clip.name }} 的剩餘水分與乾燥預測尚未實作，目前沒有乾燥曲線。三個感測器的原始值曲線可以到衣夾詳細查看。</p>
@@ -373,7 +369,6 @@ const airNote = computed(() => {
   return '';
 });
 
-const curveRange = ref<'session' | 'day'>('session');
 
 // ----- idle state
 // Same layout either way: without the demo there is no prediction yet, so each row shows NONE.
