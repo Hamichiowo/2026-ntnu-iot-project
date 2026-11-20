@@ -79,7 +79,8 @@
       </div>
     </section>
 
-    <section class="panel">
+    <!-- The connection log is demo only; there is no real event source yet. -->
+    <section v-if="mock.demoEnabled.value" class="panel">
       <h2>連線事件</h2>
       <div class="ui-table-wrap">
         <table class="ui-table">
@@ -93,7 +94,8 @@
       </div>
     </section>
 
-    <p class="demo-note">示範資料：衣夾-02～08 與連線事件為前端模擬；衣夾-01 與空氣盒子為實際資料。</p>
+    <p v-if="mock.demoEnabled.value" class="demo-note">示範資料：衣夾-02～08 與連線事件為前端模擬；衣夾-01 與空氣盒子為實際資料。可在設定關閉示範資料。</p>
+    <p v-else class="demo-note">示範資料已關閉，只顯示實際的衣夾與空氣盒子。</p>
   </div>
 </template>
 

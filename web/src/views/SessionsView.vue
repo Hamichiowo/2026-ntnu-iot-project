@@ -8,7 +8,8 @@
     <section aria-label="本月統計" class="ui-stats">
       <div class="ui-stat"><span class="ui-stat__label">本月晾衣</span><span class="ui-stat__value">{{ monthCount }}<small> 次</small></span></div>
       <div class="ui-stat"><span class="ui-stat__label">平均預測誤差</span>
-        <span class="ui-stat__value ac-tx">{{ avgError == null ? '—' : `±${avgError}` }}<small> 分</small></span></div>
+        <span v-if="!predicting" class="ui-stat__value muted">NONE</span>
+        <span v-else class="ui-stat__value ac-tx">{{ avgError == null ? '—' : `±${avgError}` }}<small> 分</small></span></div>
       <div class="ui-stat"><span class="ui-stat__label">平均乾燥時間</span>
         <span class="ui-stat__value">
           <template v-if="avgDry != null">{{ Math.floor(avgDry / 60) }}<small> 小時 </small>{{ avgDry % 60 }}<small> 分</small></template>
@@ -23,6 +24,7 @@
           <table class="ui-table">
             <thead><tr><th scope="col">日期</th><th scope="col">衣物</th><th scope="col">實際</th><th scope="col">預測</th><th scope="col">誤差</th></tr></thead>
             <tbody>
+              <tr v-if="!rows.length"><td colspan="5" class="muted">還沒有晾衣紀錄</td></tr>
               <tr v-for="row in rows" :key="row.id">
                 <td>{{ row.date }}</td>
                 <td class="strong">{{ row.name }} <small class="muted">{{ row.material }}</small></td>
@@ -48,16 +50,18 @@
           <h2>感測法預測誤差</h2>
           <div v-for="m in methods" :key="m.key" class="method-row">
             <span>{{ m.label }}</span>
-            <strong v-if="m.best" class="ac-tx">±{{ m.err }} 分</strong><span v-else>±{{ m.err }} 分</span>
+            <span v-if="!predicting" class="muted">NONE</span>
+            <strong v-else-if="m.best" class="ac-tx">±{{ m.err }} 分</strong><span v-else>±{{ m.err }} 分</span>
           </div>
         </section>
       </aside>
     </div>
 
-    <div class="demo-note foot">
-      <span>示範資料：晾衣紀錄、預測與誤差目前為前端模擬，存在這台瀏覽器。</span>
+    <div v-if="predicting" class="demo-note foot">
+      <span>示範資料：晾衣紀錄、預測與誤差目前為前端模擬，存在這台瀏覽器。可在設定關閉示範資料。</span>
       <button type="button" class="ui-btn ui-btn--ghost" @click="resetDemo">重設示範資料</button>
     </div>
+    <p v-else class="demo-note">示範資料已關閉，只列出實際的晾衣紀錄（目前存在這台瀏覽器）。乾燥預測尚未實作，預測與誤差顯示 NONE。</p>
   </div>
 </template>
 
@@ -68,6 +72,8 @@ import { METHOD_ERROR, useClothesMock } from '../composables/useClothesMock';
 import { TAIPEI_MS, monthDay, shortDuration } from '../utils/format';
 
 const mock = useClothesMock();
+// Predictions (and so errors) only exist as demo data for now.
+const predicting = computed(() => mock.demoEnabled.value);
 
 const nameOf = (garmentId: string) => mock.garmentById(garmentId)?.name ?? '已刪除的衣物';
 const materialOf = (garmentId: string) => mock.garmentById(garmentId)?.material ?? '—';
@@ -75,15 +81,16 @@ const materialOf = (garmentId: string) => mock.garmentById(garmentId)?.material 
 const rows = computed(() => {
   const active = mock.state.sessions.map((s) => ({
     id: s.id, at: s.startedAt, date: monthDay(s.startedAt), name: nameOf(s.garmentId), material: materialOf(s.garmentId),
-    actual: '晾衣中', actualTone: 'ac-tx', predicted: shortDuration(s.totalMin), error: '—', errorTone: 'muted',
+    actual: '晾衣中', actualTone: 'ac-tx', predicted: predicting.value ? shortDuration(s.totalMin) : 'NONE', error: predicting.value ? '—' : 'NONE', errorTone: 'muted',
   }));
   const done = mock.state.records.map((r) => {
     const err = r.actualMin == null ? null : Math.abs(r.actualMin - r.predictedMin);
     return {
       id: r.id, at: r.startedAt, date: monthDay(r.startedAt), name: nameOf(r.garmentId), material: materialOf(r.garmentId),
       actual: r.actualMin == null ? '提早收起' : shortDuration(r.actualMin), actualTone: r.actualMin == null ? 'muted' : '',
-      predicted: shortDuration(r.predictedMin),
-      error: err == null ? '不列入' : shortDuration(err), errorTone: err == null ? 'muted' : err >= 30 ? 'wa-tx strong' : '',
+      predicted: predicting.value ? shortDuration(r.predictedMin) : 'NONE',
+      error: !predicting.value ? 'NONE' : err == null ? '不列入' : shortDuration(err),
+      errorTone: !predicting.value || err == null ? 'muted' : err >= 30 ? 'wa-tx strong' : '',
     };
   });
   return [...active, ...done].sort((a, b) => b.at - a.at);
@@ -121,8 +128,8 @@ function exportCsv() {
   const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
   const lines = [['開始時間（台北）', '衣物', '材質', '實際（分）', '預測（分）', '結果'].map(esc).join(',')];
   const all = [
-    ...mock.state.sessions.map((s) => ({ at: s.startedAt, g: s.garmentId, actual: '', predicted: s.totalMin, result: '晾衣中' })),
-    ...mock.state.records.map((r) => ({ at: r.startedAt, g: r.garmentId, actual: r.actualMin ?? '', predicted: r.predictedMin, result: r.outcome === 'dry' ? '已乾' : '提早收起' })),
+    ...mock.state.sessions.map((s) => ({ at: s.startedAt, g: s.garmentId, actual: '', predicted: predicting.value ? s.totalMin : '', result: '晾衣中' })),
+    ...mock.state.records.map((r) => ({ at: r.startedAt, g: r.garmentId, actual: r.actualMin ?? '', predicted: predicting.value ? r.predictedMin : '', result: r.outcome === 'dry' ? '已乾' : '提早收起' })),
   ].sort((a, b) => b.at - a.at);
   for (const r of all) {
     const local = new Date(r.at + TAIPEI_MS).toISOString().slice(0, 16).replace('T', ' ');
@@ -131,7 +138,7 @@ function exportCsv() {
   const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const stamp = new Date(Date.now() + TAIPEI_MS).toISOString().slice(0, 10).replace(/-/g, '');
-  const link = Object.assign(document.createElement('a'), { href: url, download: `clothes_sessions_demo_${stamp}.csv` });
+  const link = Object.assign(document.createElement('a'), { href: url, download: `clothes_sessions${predicting.value ? '_demo' : ''}_${stamp}.csv` });
   document.body.append(link); link.click(); link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

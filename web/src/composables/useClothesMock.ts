@@ -3,6 +3,11 @@
 // Everything here is front-end only and kept in localStorage; pages that show it carry
 // a "示範資料" note. 衣夾-01 is the real clip (live: true) — its online state comes from
 // the server, see useClothesData.ts.
+//
+// 設定 → 示範資料 turns the demo off: only the real clip is listed, there is no demo
+// weather, and garments / sessions / records come from a separate, initially empty store
+// (clothes-local-v1) that holds what the user actually records. The demo store is kept, so
+// turning the demo back on restores it. Both stores move to the server later.
 import { computed, reactive, ref, watch } from 'vue';
 import { BASE_MINUTES, type Material, type StyleKey } from '../constants/garments';
 import { DAY_MS, TAIPEI_MS } from '../utils/format';
@@ -50,7 +55,9 @@ interface State {
   focus: string | null;       // session to show first on the overview
 }
 
-const KEY = 'clothes-demo-v1';
+const DEMO_KEY = 'clothes-demo-v1';
+const LOCAL_KEY = 'clothes-local-v1';
+const ENABLED_KEY = 'clothes-demo-enabled';  // TODO: becomes a server-side setting
 const MIN = 60000;
 
 function seed(now = Date.now()): State {
@@ -86,16 +93,34 @@ function seed(now = Date.now()): State {
   return { v: 1, seededAt: now, garments, sessions, records, removed: [], methods: {}, focus: null };
 }
 
-function load(): State {
+// Real use starts empty; only what the user records goes in here.
+const empty = (now = Date.now()): State => ({ v: 1, seededAt: now, garments: [], sessions: [], records: [], removed: [], methods: {}, focus: null });
+
+function load(key: string, fallback: () => State): State {
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+    const saved = JSON.parse(localStorage.getItem(key) || 'null');
     if (saved && saved.v === 1 && Array.isArray(saved.garments) && Array.isArray(saved.sessions)) return saved as State;
-  } catch { /* fall back to fresh demo data */ }
-  return seed();
+  } catch { /* fall back to fresh data */ }
+  return fallback();
+}
+function save(key: string, value: State) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* data just resets on reload */ }
 }
 
-const state = reactive<State>(load());
-watch(state, (value) => { try { localStorage.setItem(KEY, JSON.stringify(value)); } catch { /* demo just resets on reload */ } }, { deep: true });
+const demoEnabled = ref((() => { try { return localStorage.getItem(ENABLED_KEY) !== 'false'; } catch { return true; } })());
+const storeKey = () => (demoEnabled.value ? DEMO_KEY : LOCAL_KEY);
+const loadStore = () => (demoEnabled.value ? load(DEMO_KEY, seed) : load(LOCAL_KEY, empty));
+
+const state = reactive<State>(loadStore());
+watch(state, (value) => save(storeKey(), value), { deep: true });
+
+function setDemoEnabled(on: boolean) {
+  if (on === demoEnabled.value) return;
+  save(storeKey(), state);  // keep the store being left
+  demoEnabled.value = on;
+  try { localStorage.setItem(ENABLED_KEY, String(on)); } catch { /* setting just resets on reload */ }
+  Object.assign(state, loadStore());
+}
 
 // Clock for time-based demo values; coarse on purpose.
 const now = ref(Date.now());
@@ -123,7 +148,9 @@ function predictMinutes(garment: GarmentDraft & { id?: string }) {
 }
 
 // Demo weather: rain from 17:00 Taipei today (or tomorrow once 17:00 has passed).
+// There is no real weather source yet, so it is null with the demo off.
 const weather = computed(() => {
+  if (!demoEnabled.value) return null;
   const dayStart = Math.floor((now.value + TAIPEI_MS) / DAY_MS) * DAY_MS - TAIPEI_MS;
   let rainAt = dayStart + 17 * 60 * MIN;
   if (rainAt <= now.value) rainAt += DAY_MS;
@@ -149,7 +176,9 @@ function clipStatus(d: ClipDevice): ClipStatus {
 
 const activeClipIds = computed(() => new Set(state.sessions.map((s) => s.clipId)));
 const busyGarmentIds = computed(() => new Set(state.sessions.map((s) => s.garmentId)));
-const devices = computed(() => CLIP_DEVICES.filter((d) => !state.removed.includes(d.id)));
+// With the demo off only the real clip exists.
+const shownClip = (d: ClipDevice) => demoEnabled.value || d.live;
+const devices = computed(() => CLIP_DEVICES.filter((d) => shownClip(d) && !state.removed.includes(d.id)));
 
 // ---------------------------------------------------------------- mutations
 function updateGarment(id: string, patch: Partial<GarmentDraft>) {
@@ -189,13 +218,13 @@ function endSession(sessionId: string, how: 'dry' | 'early' | 'cancel') {
 function setMethod(clipId: string, method: Method) { state.methods[clipId] = method; }
 function removeDevice(clipId: string) { if (!state.removed.includes(clipId)) state.removed.push(clipId); }
 function clearFocus() { state.focus = null; }
-function reset() { Object.assign(state, seed()); }
+function reset() { Object.assign(state, demoEnabled.value ? seed() : empty()); }
 
 export function useClothesMock() {
   return {
-    state, now, weather, devices, activeClipIds, busyGarmentIds,
+    state, now, weather, devices, activeClipIds, busyGarmentIds, demoEnabled,
     garmentById, dryCount, predictMinutes, clipStatus,
-    clipById: (id: string) => CLIP_DEVICES.find((d) => d.id === id),
-    updateGarment, addGarment, swapGarment, startSession, endSession, setMethod, removeDevice, clearFocus, reset,
+    clipById: (id: string) => CLIP_DEVICES.find((d) => d.id === id && shownClip(d)),
+    updateGarment, addGarment, swapGarment, startSession, endSession, setMethod, removeDevice, clearFocus, reset, setDemoEnabled,
   };
 }

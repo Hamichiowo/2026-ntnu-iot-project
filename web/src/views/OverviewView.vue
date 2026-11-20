@@ -68,7 +68,7 @@
               <p class="air-note muted">{{ airNote || '\u00a0' }}</p>
               <div class="weather">
                 <svg width="28" height="28" viewBox="0 0 56 56" fill="none" aria-hidden="true"><circle cx="28" cy="28" r="11" :stroke="palette.wa" stroke-width="4" /><path d="M28 6v6M28 44v6M6 28h6M44 28h6M12.4 12.4l4.2 4.2M39.4 39.4l4.2 4.2M12.4 43.6l4.2-4.2M39.4 16.6l4.2-4.2" :stroke="palette.wa" stroke-width="4" stroke-linecap="round" /></svg>
-                <span class="ellipsis">{{ weather.summary }} · {{ clock(weather.rainAt) }} 起降雨機率 {{ weather.rainChance }}%</span>
+                <span class="ellipsis">{{ weatherText }}</span>
               </div>
               <div role="status" aria-live="polite" class="alert-slot">
                 <div v-if="alerts.length" class="alert">
@@ -171,7 +171,7 @@
             </div>
             <div class="weather">
               <svg width="28" height="28" viewBox="0 0 56 56" fill="none" aria-hidden="true"><circle cx="28" cy="28" r="11" :stroke="palette.wa" stroke-width="4" /><path d="M28 6v6M28 44v6M6 28h6M44 28h6M12.4 12.4l4.2 4.2M39.4 39.4l4.2 4.2M12.4 43.6l4.2-4.2M39.4 16.6l4.2-4.2" :stroke="palette.wa" stroke-width="4" stroke-linecap="round" /></svg>
-              <span class="ellipsis">{{ weather.summary }} · {{ clock(weather.rainAt) }} 起降雨機率 {{ weather.rainChance }}%</span>
+              <span class="ellipsis">{{ weatherText }}</span>
             </div>
           </div>
         </div>
@@ -223,7 +223,8 @@
         </section>
       </div>
 
-      <p class="demo-note">示範資料：衣物、晾衣紀錄、衣夾-02～05 的剩餘水分與乾燥預測、戶外天氣目前為前端模擬；空氣盒子溫濕度為實際資料。衣夾-01 的剩餘水分與乾燥預測尚未實作，原始感測值請到衣夾詳細查看。</p>
+      <p v-if="mock.demoEnabled.value" class="demo-note">示範資料：衣物、晾衣紀錄、衣夾-02～05 的剩餘水分與乾燥預測、戶外天氣目前為前端模擬；空氣盒子溫濕度為實際資料。衣夾-01 的剩餘水分與乾燥預測尚未實作，原始感測值請到衣夾詳細查看。可在設定關閉示範資料。</p>
+      <p v-else class="demo-note">示範資料已關閉。衣物與晾衣紀錄目前存在這台瀏覽器；空氣盒子溫濕度為實際資料。剩餘水分、乾燥預測與戶外天氣尚未實作。</p>
     </div>
   </div>
 </template>
@@ -347,7 +348,7 @@ const alerts = computed(() => {
   if (!c) return [];
   const out: { msg: string; action: string }[] = [];
   const w = weather.value;
-  if (c.dryTime && c.dryTime > w.rainAt && w.rainAt - mock.now.value < DAY_MS / 2)
+  if (w && c.dryTime && c.dryTime > w.rainAt && w.rainAt - mock.now.value < DAY_MS / 2)
     out.push({ msg: `${c.garment.name}預計 ${clock(c.dryTime)} 才乾，但 ${clock(w.rainAt)} 起降雨機率 ${w.rainChance}%，`, action: `建議 ${clock(w.rainAt - 30 * MIN)} 前收進室內` });
   const humi = shownAir.value?.humi;
   if (humi != null && humi > 75)
@@ -375,7 +376,13 @@ const airNote = computed(() => {
 const curveRange = ref<'session' | 'day'>('session');
 
 // ----- idle state
+// Same layout either way: without the demo there is no prediction yet, so each row shows NONE.
+const weatherText = computed(() => {
+  const w = weather.value;
+  return w ? `${w.summary} · ${clock(w.rainAt)} 起降雨機率 ${w.rainChance}%` : '戶外天氣 NONE';
+});
 const idleForecast = computed(() => (['聚酯纖維', '棉', '牛仔布'] as Material[]).map((material) => {
+  if (!weather.value) return { material, text: 'NONE', tone: 'muted' };
   const t = mock.now.value + BASE_MINUTES[material] * MIN;
   const local = new Date(t + TAIPEI_MS);
   const nextDay = Math.floor((t + TAIPEI_MS) / DAY_MS) !== Math.floor((mock.now.value + TAIPEI_MS) / DAY_MS);

@@ -47,13 +47,13 @@
                   <span class="option-text"><b>{{ g.name }}</b><small>{{ g.meta }}</small></span>
                   <span class="tag">{{ g.busy ? '晾衣中' : '' }}</span>
                 </button>
-                <p v-if="!library.length" class="muted">找不到符合的衣物</p>
+                <p v-if="!library.length" class="muted">{{ mock.state.garments.length ? '找不到符合的衣物' : '還沒有衣物，請先新增一件' }}</p>
               </div>
               <button type="button" class="ui-btn ui-btn--lg ui-btn--dashed" @click="creating = true">＋ 新增一件衣物</button>
             </template>
             <template v-else>
               <GarmentForm v-model="draft" id-prefix="new-garment" placeholder="例如：白色班服" />
-              <p class="ui-note ui-note--info">第一次晾的衣物還不知道乾燥時間，會先用材質估算，預測可能較不準；收衣後會自動記住。</p>
+              <p v-if="mock.demoEnabled.value" class="ui-note ui-note--info">第一次晾的衣物還不知道乾燥時間，會先用材質估算，預測可能較不準；收衣後會自動記住。</p>
               <button type="button" class="ui-btn ui-btn--ghost start" @click="creating = false">← 改選晾過的衣物</button>
             </template>
           </div>
@@ -64,7 +64,7 @@
             <dl class="summary">
               <div><dt>衣夾</dt><dd>{{ clip?.name }}</dd></div>
               <div><dt>衣物</dt><dd>{{ chosen?.name }}</dd></div>
-              <div><dt>預計乾燥</dt><dd>約 {{ minutesText(predicted) }}</dd></div>
+              <div><dt>預計乾燥</dt><dd>{{ clip?.live ? 'NONE' : `約 ${minutesText(predicted)}` }}</dd></div>
             </dl>
             <div class="ui-field">
               <label for="start-airbox">室內環境來自</label>
@@ -79,7 +79,8 @@
           </div>
         </div>
       </div>
-      <p class="demo-note">示範資料：衣物庫與晾衣紀錄目前存在這台瀏覽器；空氣盒子清單為實際資料。</p>
+      <p v-if="mock.demoEnabled.value" class="demo-note">示範資料：衣物庫與晾衣紀錄目前存在這台瀏覽器；空氣盒子清單為實際資料。可在設定關閉示範資料。</p>
+      <p v-else class="demo-note">示範資料已關閉。衣物與晾衣紀錄目前存在這台瀏覽器；空氣盒子清單為實際資料。衣夾-01 的乾燥預測尚未實作。</p>
     </div>
   </section>
 </template>
