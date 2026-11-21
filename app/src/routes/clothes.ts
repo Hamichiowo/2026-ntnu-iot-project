@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import {
   AIR_MAX_AGE_MS, CSV_HEADER, type CsvRow, airReadings, clothesAirboxId, listAirboxes, clothesCsvLine, clothesExportRows,
-  clothesHistory, clothesState, latestAir, latestClothesRaw, CLIP_STALE_MS, DEFAULT_CLIP_ID,
+  clothesHistory, clothesState, latestAir, latestClothesRaw, CLIP_STALE_MS, isUuid,
 } from '../clothes/store';
 import { mqttSubscriber } from '../mqtt/subscriber';
 import { dryingRoute } from './drying';
@@ -15,14 +15,14 @@ async function optional<T>(read: () => Promise<T>): Promise<T | null> {
   try { return await read(); } catch { return null; }
 }
 
-// ?airbox=<device_id> picks the air box; without it, the clip's own setting (?clip=, default c1),
-// then CLOTHES_AIRBOX_ID, then the most recent one.
+// ?airbox=<device_id> picks the air box; without it, the clip's own setting (?clip=<uuid>, default
+// the real clip), then CLOTHES_AIRBOX_ID, then the most recent one.
 const AIRBOX_ID = /^[A-Za-z0-9_.:-]{1,64}$/;
 const BAD_AIRBOX = { success: false, error: 'airbox 或 clip 參數格式錯誤' } as const;
 async function chosenAirbox(requested: string | undefined, clip: string | undefined) {
   if (requested !== undefined) return AIRBOX_ID.test(requested) ? requested : undefined;
-  if (clip !== undefined && !AIRBOX_ID.test(clip)) return undefined;
-  return optional(() => clothesAirboxId(clip ?? DEFAULT_CLIP_ID));
+  if (clip !== undefined && !isUuid(clip)) return undefined;
+  return optional(() => clothesAirboxId(clip));
 }
 
 // Air boxes for the dashboard picker; "connected" = online and reported within the last 5 minutes.
@@ -30,8 +30,8 @@ clothesRoute.get('/airboxes', async (c) => {
   const boxes = await optional(listAirboxes);
   if (!boxes) return c.json({ success: false, error: '資料庫無法讀取，空氣盒子清單暫時不可用' }, 503);
   const now = Date.now();
-  const clip = c.req.query('clip') ?? DEFAULT_CLIP_ID;
-  if (!AIRBOX_ID.test(clip)) return c.json(BAD_AIRBOX, 400);
+  const clip = c.req.query('clip');
+  if (clip !== undefined && !isUuid(clip)) return c.json(BAD_AIRBOX, 400);
   // default_id: the box this clip actually uses.
   return c.json({ success: true, default_id: await optional(() => clothesAirboxId(clip)), airboxes: boxes.map((box) => ({
     device_id: box.device_id, display_name: box.display_name, last_reading: box.last_reading,

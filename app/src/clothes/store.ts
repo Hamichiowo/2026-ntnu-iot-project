@@ -3,8 +3,11 @@ import type { ClothesRaw } from './validation';
 
 export const clothesState = { schemaReady: false, lastError: null as string | null };
 
-// Only one physical clip for now: everything on clothes/raw belongs to it.
-export const DEFAULT_CLIP_ID = 'c1';
+// The MQTT topic of the physical clip. The clip with this topic in `clips` owns every reading on it.
+export const CLOTHES_TOPIC = process.env.CLOTHES_MQTT_TOPIC || 'clothes/raw';
+// Clips, garments and sessions use server-generated UUIDs.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const isUuid = (value: unknown): value is string => typeof value === 'string' && UUID.test(value);
 // The clip reports once a minute (every 10 s while handled) and sleeps in between,
 // so data counts as interrupted only after three missed reports.
 export const CLIP_STALE_MS = 3 * 60000;
@@ -24,6 +27,7 @@ export async function ensureClothesSchema(): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS clothes_raw_timestamp_idx ON clothes_raw (timestamp DESC, id DESC)`;
   clothesState.schemaReady = true;
 }
+
 
 function database() {
   if (!dbClient.isConnected() || !clothesState.schemaReady) throw new Error('Clothes database unavailable');
@@ -73,11 +77,18 @@ export function clothesCsvLine(row: CsvRow) {
 export const AIR_MAX_AGE_MS = 5 * 60000;
 export type AirReading = { timestamp: Date | string; temp: number | null; humi: number | null };
 
-// Which air box to pair with a clip: the clip's own setting (clips.airbox_id), else
-// CLOTHES_AIRBOX_ID, else the one that reported most recently.
-export async function clothesAirboxId(clipId = DEFAULT_CLIP_ID): Promise<string | null> {
+// The clip that owns CLOTHES_TOPIC (the real clip); null before the drying schema has created it.
+export async function rawClipId(): Promise<string | null> {
+  const rows = await database()`SELECT id FROM clips WHERE topic = ${CLOTHES_TOPIC} AND NOT is_demo`;
+  return rows[0]?.id ?? null;
+}
+
+// Which air box to pair with a clip (default: the real clip): the clip's own setting
+// (clips.airbox_id), else CLOTHES_AIRBOX_ID, else the one that reported most recently.
+export async function clothesAirboxId(clipId?: string): Promise<string | null> {
   const sql = database();
-  const clips = await sql`SELECT airbox_id FROM clips WHERE id = ${clipId}`;
+  const id = clipId ?? await rawClipId();
+  const clips = id ? await sql`SELECT airbox_id FROM clips WHERE id = ${id}::uuid` : [];
   if (clips[0]?.airbox_id) return clips[0].airbox_id;
   if (process.env.CLOTHES_AIRBOX_ID) return process.env.CLOTHES_AIRBOX_ID;
   const rows = await sql`SELECT device_id FROM sensor_data ORDER BY timestamp DESC LIMIT 1`;

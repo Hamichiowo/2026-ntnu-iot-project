@@ -2,7 +2,7 @@
 import { Hono, type Context } from 'hono';
 import {
   HttpError, createGarment, deleteClip, endSession, listActiveSessions, listClips, listGarments, listRecords, parseClipPatch,
-  parseDemoQuery, parseGarment, parseNewGarment, parseOutcome, parseStart, startSession, swapGarment, updateClip, updateGarment,
+  parseDemoQuery, parseGarment, parseGarmentId, parseNewGarment, parseOutcome, parseStart, startSession, swapGarment, updateClip, updateGarment,
 } from '../clothes/drying';
 import { resetDemoData } from '../clothes/demo';
 import { clothesAirboxId } from '../clothes/store';
@@ -71,11 +71,8 @@ dryingRoute.post('/sessions', (c) => handle(c, '資料庫無法寫入，晾衣�
 }));
 
 dryingRoute.patch('/sessions/:id/garment', (c) => handle(c, '資料庫無法寫入，衣物沒有更換', async () => {
-  const body = await jsonBody(c) as { garment_id?: unknown };
-  if (typeof body !== 'object' || body === null || typeof body.garment_id !== 'string' || !body.garment_id) {
-    throw new HttpError(400, '缺少欄位 garment_id');
-  }
-  return c.json({ success: true, session: await swapGarment(c.req.param('id'), body.garment_id, new Date()) });
+  const garmentId = parseGarmentId(await jsonBody(c));
+  return c.json({ success: true, session: await swapGarment(c.req.param('id'), garmentId, new Date()) });
 }));
 
 dryingRoute.post('/sessions/:id/end', (c) => handle(c, '資料庫無法寫入，晾衣沒有結束', async () => {
