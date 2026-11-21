@@ -5,11 +5,11 @@
       <button type="button" class="ui-btn" @click="exportCsv">匯出 CSV</button>
     </div>
 
+    <p v-if="mock.loadError.value || mock.actionError.value" class="ui-note ui-note--error" role="alert">{{ mock.actionError.value || mock.loadError.value }}</p>
     <section aria-label="本月統計" class="ui-stats">
       <div class="ui-stat"><span class="ui-stat__label">本月晾衣</span><span class="ui-stat__value">{{ monthCount }}<small> 次</small></span></div>
       <div class="ui-stat"><span class="ui-stat__label">平均預測誤差</span>
-        <span v-if="!predicting" class="ui-stat__value muted">NONE</span>
-        <span v-else class="ui-stat__value ac-tx">{{ avgError == null ? '—' : `±${avgError}` }}<small> 分</small></span></div>
+        <span class="ui-stat__value ac-tx">{{ avgError == null ? '—' : `±${avgError}` }}<small> 分</small></span></div>
       <div class="ui-stat"><span class="ui-stat__label">平均乾燥時間</span>
         <span class="ui-stat__value">
           <template v-if="avgDry != null">{{ Math.floor(avgDry / 60) }}<small> 小時 </small>{{ avgDry % 60 }}<small> 分</small></template>
@@ -72,7 +72,8 @@ import { METHOD_ERROR, useClothesMock } from '../composables/useClothesMock';
 import { TAIPEI_MS, monthDay, shortDuration } from '../utils/format';
 
 const mock = useClothesMock();
-// Predictions (and so errors) only exist as demo data for now.
+// Every session has a prediction from the server (history average or material default).
+// The per-method error panel is demo data only.
 const predicting = computed(() => mock.demoEnabled.value);
 
 const nameOf = (garmentId: string) => mock.garmentById(garmentId)?.name ?? '已刪除的衣物';
@@ -80,17 +81,17 @@ const materialOf = (garmentId: string) => mock.garmentById(garmentId)?.material 
 
 const rows = computed(() => {
   const active = mock.state.sessions.map((s) => ({
-    id: s.id, at: s.startedAt, date: monthDay(s.startedAt), name: nameOf(s.garmentId), material: materialOf(s.garmentId),
-    actual: '晾衣中', actualTone: 'ac-tx', predicted: predicting.value ? shortDuration(s.totalMin) : 'NONE', error: predicting.value ? '—' : 'NONE', errorTone: 'muted',
+    id: s.id, demo: s.demo, at: s.startedAt, date: monthDay(s.startedAt), name: nameOf(s.garmentId), material: materialOf(s.garmentId),
+    actual: '晾衣中', actualTone: 'ac-tx', predicted: shortDuration(s.totalMin), error: '—', errorTone: 'muted',
   }));
   const done = mock.state.records.map((r) => {
     const err = r.actualMin == null ? null : Math.abs(r.actualMin - r.predictedMin);
     return {
-      id: r.id, at: r.startedAt, date: monthDay(r.startedAt), name: nameOf(r.garmentId), material: materialOf(r.garmentId),
+      id: r.id, demo: r.demo, at: r.startedAt, date: monthDay(r.startedAt), name: nameOf(r.garmentId), material: materialOf(r.garmentId),
       actual: r.actualMin == null ? '提早收起' : shortDuration(r.actualMin), actualTone: r.actualMin == null ? 'muted' : '',
-      predicted: predicting.value ? shortDuration(r.predictedMin) : 'NONE',
-      error: !predicting.value ? 'NONE' : err == null ? '不列入' : shortDuration(err),
-      errorTone: !predicting.value || err == null ? 'muted' : err >= 30 ? 'wa-tx strong' : '',
+      predicted: shortDuration(r.predictedMin),
+      error: err == null ? '不列入' : shortDuration(err),
+      errorTone: err == null ? 'muted' : err >= 30 ? 'wa-tx strong' : '',
     };
   });
   return [...active, ...done].sort((a, b) => b.at - a.at);
@@ -100,9 +101,11 @@ const monthStart = computed(() => {
   const d = new Date(mock.now.value + TAIPEI_MS);
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) - TAIPEI_MS;
 });
-const monthCount = computed(() => mock.state.records.filter((r) => r.startedAt >= monthStart.value).length
-  + mock.state.sessions.filter((s) => s.startedAt >= monthStart.value).length);
-const finished = computed(() => mock.state.records.filter((r) => r.actualMin != null));
+// Statistics count real data only; demo rows are listed in the table but never counted.
+const realRecords = computed(() => mock.state.records.filter((r) => !r.demo));
+const monthCount = computed(() => realRecords.value.filter((r) => r.startedAt >= monthStart.value).length
+  + mock.state.sessions.filter((s) => !s.demo && s.startedAt >= monthStart.value).length);
+const finished = computed(() => realRecords.value.filter((r) => r.outcome === 'dry' && r.actualMin != null));
 const avgError = computed(() => finished.value.length
   ? Math.round(finished.value.reduce((sum, r) => sum + Math.abs(r.actualMin! - r.predictedMin), 0) / finished.value.length) : null);
 const avgDry = computed(() => finished.value.length
@@ -128,8 +131,8 @@ function exportCsv() {
   const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
   const lines = [['開始時間（台北）', '衣物', '材質', '實際（分）', '預測（分）', '結果'].map(esc).join(',')];
   const all = [
-    ...mock.state.sessions.map((s) => ({ at: s.startedAt, g: s.garmentId, actual: '', predicted: predicting.value ? s.totalMin : '', result: '晾衣中' })),
-    ...mock.state.records.map((r) => ({ at: r.startedAt, g: r.garmentId, actual: r.actualMin ?? '', predicted: predicting.value ? r.predictedMin : '', result: r.outcome === 'dry' ? '已乾' : '提早收起' })),
+    ...mock.state.sessions.map((s) => ({ at: s.startedAt, g: s.garmentId, actual: '', predicted: s.totalMin, result: '晾衣中' })),
+    ...mock.state.records.map((r) => ({ at: r.startedAt, g: r.garmentId, actual: r.actualMin ?? '', predicted: r.predictedMin, result: r.outcome === 'dry' ? '已乾' : '提早收起' })),
   ].sort((a, b) => b.at - a.at);
   for (const r of all) {
     const local = new Date(r.at + TAIPEI_MS).toISOString().slice(0, 16).replace('T', ' ');
@@ -144,7 +147,7 @@ function exportCsv() {
 }
 
 function resetDemo() {
-  if (window.confirm('重設後，示範的衣物、晾衣中項目與紀錄都會回到初始內容。確定要重設嗎？')) mock.reset();
+  if (window.confirm('重設後，示範的衣夾、衣物、晾衣中項目與紀錄都會回到初始內容；實際的紀錄不受影響。確定要重設嗎？')) void mock.reset();
 }
 </script>
 

@@ -8,6 +8,7 @@
       <div class="ui-stat" :class="{ 'ui-stat--warn': attention > 0 }"><span class="ui-stat__label">需要注意</span><span class="ui-stat__value">{{ attention }}<small> 台</small></span></div>
     </section>
 
+    <p v-if="mock.actionError.value" class="ui-note ui-note--error" role="alert">{{ mock.actionError.value }}</p>
     <section aria-label="衣夾" class="grid">
       <article v-for="c in clips" :key="c.device.id" class="dev" :class="{ warn: c.status.tone === 'warn', off: c.status.tone === 'off' }">
         <div class="dev-head">
@@ -32,7 +33,7 @@
         <div class="dev-foot">
           <code class="mono muted">{{ c.device.topic }}</code>
           <div class="foot-btns">
-            <button v-if="!c.status.online && !c.device.live" type="button" class="ui-btn" @click="mock.removeDevice(c.device.id)">移除</button>
+            <button v-if="!c.status.online && !c.device.live" type="button" class="ui-btn" @click="removeClip(c.device)">移除</button>
             <router-link :to="`/clips/${c.device.id}`" class="ui-btn">詳細資料</router-link>
           </div>
         </div>
@@ -109,6 +110,10 @@ import { agoText, clock, dayLabel, formatAir, formatRaw, minutesText } from '../
 const { latest, connectionText } = useClothesLive();
 const mock = useClothesMock();
 const MIN = 60000;
+
+function removeClip(device: { id: string; name: string }) {
+  if (window.confirm(`移除示範的${device.name}？它的示範晾衣紀錄也會一起刪除，重設示範資料後會回來。`)) void mock.removeDevice(device.id);
+}
 
 const clips = computed(() => mock.devices.value.map((device) => {
   const session = mock.state.sessions.find((s) => s.clipId === device.id);

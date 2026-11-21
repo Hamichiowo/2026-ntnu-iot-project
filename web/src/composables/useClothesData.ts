@@ -100,7 +100,7 @@ function airboxChanged(id: string | null) {
 }
 
 // Saves a clip setting on the server; the page only changes once it is stored. Returns false on failure.
-async function saveClip(patch: Partial<Pick<ClipSettings, 'airbox_id' | 'predict_method'>>) {
+async function saveClip(patch: Partial<Pick<ClipSettings, 'airbox_id'>>) {
   try {
     const data = await request(`/api/v1/clothes/clips/${CLIP_ID}`, { method: 'PATCH', body: patch });
     const before = defaultAirboxId.value;
@@ -114,7 +114,6 @@ async function saveClip(patch: Partial<Pick<ClipSettings, 'airbox_id' | 'predict
   }
 }
 const setClipAirbox = (id: string) => saveClip({ airbox_id: id });
-const setClipMethod = (method: Field) => saveClip({ predict_method: method });
 
 async function loadLatest() {
   try {
@@ -230,7 +229,7 @@ function stopIfIdle() {
 const liveState = {
   latest, error, ingestionError, mqttConnected, stale, staleAfterMs, loaded, air, clipOnline,
   airboxes, defaultAirboxId, airboxOptions, connectionTone, connectionText,
-  clipSettings, clipSettingError, setClipAirbox, setClipMethod,
+  clipSettings, clipSettingError, setClipAirbox,
 };
 
 // Read-only access without registering a consumer; it only updates while a page uses

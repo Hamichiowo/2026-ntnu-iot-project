@@ -1,7 +1,7 @@
 <template>
   <div v-if="!device" class="page">
     <router-link to="/devices" class="back">← 設備狀況</router-link>
-    <h1>找不到這個衣夾</h1>
+    <h1>{{ mock.loaded.value ? '找不到這個衣夾' : '正在讀取衣夾…' }}</h1>
   </div>
 
   <div v-else class="page">
@@ -20,7 +20,7 @@
           </div>
         </div>
       </div>
-      <p v-if="device.live && data.clipSettingError.value" class="ui-note ui-note--error" role="alert">{{ data.clipSettingError.value }}</p>
+      <p v-if="(device.live && data.clipSettingError.value) || mock.actionError.value" class="ui-note ui-note--error" role="alert">{{ mock.actionError.value || data.clipSettingError.value }}</p>
     </div>
 
     <!-- ================= real clip ================= -->
@@ -186,15 +186,10 @@ const {
 
 const device = computed(() => mock.clipById(String(route.params.id)));
 const status = computed(() => device.value ? mock.clipStatus(device.value) : { online: false, tone: 'off' as const, label: '離線', lastSeenMs: null, uptimeMin: null });
-// The real clip's method is a server setting (clips.predict_method); the demo clips keep theirs in the demo store.
-const method = computed<Method>(() => {
-  if (!device.value) return 'hx711_raw';
-  if (device.value.live) return data.clipSettings.value?.predict_method ?? 'hx711_raw';
-  return mock.state.methods[device.value.id] || 'hx711_raw';
-});
+// Each clip's method is a server setting (clips.predict_method), demo clips included.
+const method = computed<Method>(() => (device.value ? mock.methodOf(device.value.id) : 'hx711_raw'));
 function pickMethod(key: Method) {
-  if (!device.value) return;
-  if (device.value.live) void data.setClipMethod(key); else mock.setMethod(device.value.id, key);
+  if (device.value) void mock.setMethod(device.value.id, key);
 }
 const orderedSensors = computed(() => [...SENSORS].sort((a, b) => Number(b.key === method.value) - Number(a.key === method.value)));
 
