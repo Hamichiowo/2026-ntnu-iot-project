@@ -4,8 +4,8 @@
 
 ## 目前狀態
 
-- 分支 `feat/garments-sessions`，接在 `feat/clothes-redesign`（PR #12）後面開 PR（PR stack），要等 PR #12 合併後再合。照功能分成幾個 commit：全站設定 → 每支衣夾的設定 → 衣物庫和晾衣 → 示範資料進資料庫 → 前端接上 API 與標籤。
-- 衣夾 ID 先照現在一支做：`clothes/raw`、`clothes_raw` 沒有改，`clips` 只有 `c1`。多衣夾之後另外開分支處理。
+- 分支 `feat/garments-sessions`，接在 `feat/clothes-redesign`（PR #12）後面開 PR（PR stack），要等 PR #12 合併後再合。照功能分成幾個 commit：全站設定 → 每支衣夾的設定 → 衣物庫和晾衣 → 示範資料進資料庫 → 前端接上 API 與標籤 → UUID 與名稱不重複。
+- 實際的衣夾先照現在一支做：`clothes/raw`、`clothes_raw` 沒有改，`clips` 裡 `topic = clothes/raw` 的那支（衣夾-01）就是它。多衣夾之後另外開分支處理。
 
 ## 這一輪做好的部分
 
@@ -15,6 +15,7 @@
 | 每支衣夾的設定（配對空氣盒子、預測方式、名稱） | `clips`，`GET/PATCH/DELETE /clothes/clips` | 已接上：空氣盒子選單、衣夾詳細的「預測使用」 |
 | 衣物庫、晾衣中、晾衣紀錄 | `garments`、`drying_sessions`，`/clothes/garments`、`/clothes/sessions*` | 已接上：`useDrying.ts`，用衣夾-01 開始／換衣物／結束都會寫進資料庫 |
 | 預測（預計乾燥時間） | 歷史平均，沒有紀錄用材質預設值（`prediction.ts`） | 已接上：衣夾-01 顯示伺服器的預測 |
+| ID 與名稱 | 衣夾、衣物、晾衣改成資料庫產生的 UUID（舊的文字 id 啟動時自動轉換）；衣夾、衣物、空氣盒子的名稱不能重複（真假各自） | 衣夾網址 `/clips/<uuid>`；同名時表單先提示 |
 | 示範資料 | 同一組表加 `is_demo`，複合 FK 保證真假不混；`make seed`、`POST /clothes/demo/reset` | 混在一起顯示並加「示範」標籤，統計只算真的 |
 
 ER 圖：
@@ -27,13 +28,13 @@ erDiagram
 ```
 
 `app_settings` 是獨立的 key-value 表；`clothes_raw` 和 session 用時間區間對應，不建 FK。
-migration：`002_app_settings.sql`～`005_demo_data.sql`（啟動時也會自動建表、補欄位）。
+migration：`002_app_settings.sql`～`007_airbox_names.sql`（啟動時也會自動建表、補欄位、轉換舊 id）。
 
 ## 接下來要做的事
 
 1. **統計**：前端目前只用真的紀錄自己算（`SessionsView.vue`），後端只有紀錄和 `total`。平均乾燥時間、誤差、各材質平均之後再決定怎麼做。
 2. **剩餘水分 %**、用重量曲線修正預測：還沒做。
-3. **多衣夾**：`clothes_raw` 加 `clip_id`、topic 改成可以分辨衣夾，`clips` 加列；`listClips()` 裡「`clothes_raw` 都算 `c1`」的判斷要跟著改。示範衣夾佔用 `c2`～`c8` 這幾個 id，真的衣夾編號要避開，或先把示範衣夾改名（`demo.ts`、前端 `DEMO_LOOK`）。
+3. **多衣夾**：`clothes_raw` 加 `clip_id`、topic 改成可以分辨衣夾，`clips` 加列。新衣夾在 `clips` 加一列並填上自己的 `topic`；`listClips()` 的在線判斷和 `rawClipId()` 目前只看 `CLOTHES_MQTT_TOPIC` 這一個 topic，要改成依 topic 對應。
 4. 其他沿用之前的清單：戶外天氣（`feat/outdoor-weather`）、連線事件、空夾歸零（韌體要先能收指令）。
 
 ## 驗證方式
