@@ -9,7 +9,7 @@ ESP32 智慧衣夾 → MQTT → 後端加上收到時間 → PostgreSQL → 網�
 | 目錄 | 內容 |
 | --- | --- |
 | `app/` | 後端：Bun + Hono + `Bun.sql`（PostgreSQL）+ mqtt.js。入口 `app/src/index.ts` |
-| `app/src/clothes/` | 衣夾資料：`validation.ts`（MQTT 內容檢查）、`ingest.ts`、`store.ts`（建表、查詢、CSV、空氣盒子對應）、`drying.ts`（衣夾設定、衣物庫、晾衣）、`prediction.ts`（乾燥預測） |
+| `app/src/clothes/` | 衣夾資料：`validation.ts`（MQTT 內容檢查）、`ingest.ts`、`store.ts`（建表、查詢、CSV、空氣盒子對應）、`drying.ts`（衣夾設定、衣物庫、晾衣）、`prediction.ts`（乾燥預測）、`demo.ts`（示範資料內容、`make seed`、重設） |
 | `app/src/settings/` | 全站設定 `app_settings`（key → JSON，白名單在 `SETTING_DEFS`） |
 | `app/src/routes/` | API，掛在 `/api/v1`。衣夾相關的在 `clothes.ts`、`drying.ts`，全站設定在 `settings.ts` |
 | `app/src/mqtt/subscriber.ts` | 訂閱 `MAPS/+/sensor`、`MAPS/+/status`、`MAPS/+/online`、`clothes/raw` |
@@ -31,10 +31,14 @@ ESP32 智慧衣夾 → MQTT → 後端加上收到時間 → PostgreSQL → 網�
 ### 衣夾 API（`/api/v1/clothes`）
 - 原始資料：`GET /latest`、`GET /history?start&end&limit`（最多 24 小時，長範圍取平均 `bucket_seconds`）、`GET /export?start&end`（CSV，最多 7 天）、`GET /airboxes`。都可以帶 `?clip=`（預設 `c1`）或 `?airbox=`。
 - 配對的空氣盒子：`?airbox=` → `clips.airbox_id` → `CLOTHES_AIRBOX_ID` → 最近回報的盒子。`/airboxes` 的 `default_id` 就是這支衣夾實際用的盒子。
-- 衣夾設定：`GET /clips`、`PATCH /clips/:id`（`name`、`airbox_id`、`predict_method`）。目前只有 `c1`，`clothes/raw` 的資料都算它的。
-- 衣物庫：`GET/POST /garments`、`PATCH /garments/:id`。
+- 衣夾設定：`GET /clips`、`PATCH /clips/:id`（`name`、`airbox_id`、`predict_method`）、`DELETE /clips/:id`（只能刪示範衣夾）。實際的衣夾只有 `c1`，`clothes/raw` 的資料都算它的。
+- 衣物庫：`GET/POST /garments`（可帶 `is_demo`）、`PATCH /garments/:id`。
 - 晾衣：`GET /sessions/active`、`POST /sessions`（`garment_id` 或新的 `garment` 擇一）、`PATCH /sessions/:id/garment`、`POST /sessions/:id/end`（`dry`／`early`／`cancel`，cancel 會刪掉）、`GET /sessions?start&end&limit`（已結束的紀錄和 `total`）。
 - 預測（`prediction.ts`）：這件衣物過去 `dry` 紀錄的平均，沒有紀錄用材質預設值 `BASE_MINUTES`（要和 `web/src/constants/garments.ts` 一致）。
+- **示範資料**：和真資料存在同一組表（`clips`、`garments`、`drying_sessions`），以 `is_demo = true` 標記。
+  - 列表 API 預設**不回傳**示範資料，要帶 `?demo=include`；每一筆都有 `is_demo`。
+  - 複合 FK `(clip_id, is_demo)`、`(garment_id, is_demo)` 保證一筆晾衣和它的衣夾、衣物同為真或同為示範；混用時 API 回 400。
+  - 示範資料不會在啟動時寫入，要執行 `make seed`（已經有就略過）；`POST /demo/reset` 只重建示範資料。衣夾-01 不會有示範資料。
 - 錯誤：呼叫端的錯誤用 `HttpError` 回 400／404／409，資料庫問題回 503。
 
 ### 全站設定（`/api/v1/settings`）
@@ -53,6 +57,7 @@ make logs        # 追蹤 app 日誌；make logs s=postgres
 make test        # 後端 bun test + 前端 build
 make typecheck   # 前端型別檢查（vue-tsc 2.2 + TypeScript 5.8）
 make sim         # 沒板子時送模擬衣夾資料（SIM_COUNT=10 可改筆數）
+make seed        # 寫入示範資料（衣夾-02～08、衣物、晾衣紀錄）；已經有就略過
 make check       # MQTT 帳密是否正確、哪些裝置被拒絕
 make smoke       # 整合測試，需要 tools/config.json，會寫入測試資料
 ```
@@ -61,7 +66,7 @@ make smoke       # 整合測試，需要 tools/config.json，會寫入測試資�
 
 ## 規則
 
-- **不得用假資料冒充真資料**。資料庫讀不到就回 503，不能改用記憶體資料或預設值假裝成功。前端用到示範資料的頁面，底部一定要註明。
+- **不得用假資料冒充真資料**。資料庫讀不到就回 503，不能改用記憶體資料或預設值假裝成功。示範資料一律以 `is_demo` 標記、API 預設排除，畫面上要加「示範」標籤（`components/clothes/DemoTag.vue`），統計只算真資料；用到示範資料的頁面，底部一定要註明。
 - **時間一律由後端加**，顯示時用台北時間。
 - 資料表用 `CREATE TABLE IF NOT EXISTS` 寫在啟動時會跑的 `ensure*Schema()` 裡，新舊資料庫都能用；同時在 `db/migrations/` 放一份 SQL。
 - **不要執行 `docker compose down -v`**，會刪掉資料庫 volume。
@@ -70,10 +75,12 @@ make smoke       # 整合測試，需要 tools/config.json，會寫入測試資�
 ## 前端架構（`web/src`）
 
 - **主題**：`styles/main.css` 定義深色（預設）和亮色兩組 token（`--bg --sf --tx --ac --wa …`），舊的 `--color-*` 也對應到同一組 token，所以空氣盒子頁面也會跟著換色。SVG 和 Chart.js 需要實際色碼時用 `composables/useTheme.ts` 的 `palette`；兩邊的色碼要保持一致。
-- **真實資料**：`composables/useClothesData.ts`。module 層級的共用狀態，`useClothesLive()`／`useClothesHistory()` 只在有頁面使用時才輪詢。衣夾-01 的設定（配對空氣盒子、預測方式）從 `/clips` 讀，改的時候 `PATCH /clips/c1`，伺服器存好才更新畫面（`setClipAirbox`、`setClipMethod`）。
+- **真實資料**：`composables/useClothesData.ts`。module 層級的共用狀態，`useClothesLive()`／`useClothesHistory()` 只在有頁面使用時才輪詢。衣夾-01 配對的空氣盒子從 `/clips` 讀，改的時候 `PATCH /clips/c1`，伺服器存好才更新畫面（`setClipAirbox`）。各衣夾的預測方式走 `useClothesMock` 的 `setMethod`。
 - **全站設定**：`composables/useSettings.ts`。localStorage `clothes-settings-cache` 只用來讓第一次畫面一致，伺服器回應後以伺服器為準。
-- **示範資料**：`composables/useClothesMock.ts`（衣物、衣夾-02～08、晾衣中項目、紀錄、預測、戶外天氣），存在 localStorage `clothes-demo-v1`。**後端做好一項，就把對應的示範資料換成 API。**
-- **示範資料開關**：設定頁的「示範資料」（`demoEnabled`，存在伺服器的 `demo_data`，所有瀏覽器一樣；伺服器存好才切換，失敗會顯示錯誤）。關閉時只列實際的衣夾-01 與空氣盒子，連線事件隱藏；衣物、晾衣中、紀錄改用另一份一開始是空的 `clothes-local-v1`（使用者實際記錄的內容）；預測、誤差、戶外天氣尚未實作，顯示 `NONE`。兩份資料分開存，切換不會互相覆蓋。`clothes-local-v1` 之後要換成 `/garments`、`/sessions` API。示範衣夾-02～08 的預測方式仍存在示範資料的 `state.methods`。
+- **衣夾、衣物、晾衣、紀錄**：`composables/useDrying.ts` 從 API 載入（示範開啟時帶 `?demo=include`），頁面開著時每 30 秒更新，每一筆都有 `demo`。寫入都送到伺服器，成功後重新載入；失敗時畫面不變並顯示錯誤（`actionError`）。localStorage 的 `clothes-demo-v1`、`clothes-local-v1` 已不再使用。
+- **`composables/useClothesMock.ts`**：頁面讀資料的入口（`state.garments/sessions/records` 等），底下是 `useDrying.ts`。只有「不是紀錄」的示範內容留在前端：示範衣夾的外觀（晶片、IP、訊號、故障）、示範天氣、示範剩餘水分曲線、各感測法的示範誤差。
+- **真假依衣夾分**：衣夾-01 只能晾真的衣物，示範衣夾只能晾示範衣物（開始晾衣、更換衣物都照這個過濾）。衣夾-01 的預計乾燥時間用伺服器的 `predicted_min`，剩餘水分還沒有，顯示 `NONE`；示範天氣的下雨提醒只套用在示範的晾衣。
+- **示範資料開關**：設定頁的「示範資料」（存在伺服器的 `demo_data`，所有瀏覽器一樣；伺服器存好才切換，失敗會顯示錯誤）。開啟時真的和示範的混在一起顯示並加標籤；關閉時只有真的。晾衣紀錄頁的統計只算真的。
 - **總覽版面規則**（`views/OverviewView.vue`）：
   - 桌機（寬 ≥ 901px、高 ≥ 600px）「往下查看更多」以上固定在一個畫面內；字級、間距用 `clamp(rem, vh, rem)` 隨高度縮放，太高的面板在右欄內捲動。
   - **切換衣物時版面不能跳**：每一格固定單行、固定行高；沒資料時用同樣大小顯示 `NONE`／`無數據`，不要換成不同字級的說明文字，空的提示行也要保留位置。新增欄位時照這個做。
@@ -90,4 +97,5 @@ make smoke       # 整合測試，需要 tools/config.json，會寫入測試資�
 - `tools/*.py` 會產生 `tools/__pycache__/`（已在 `.gitignore`），不要 commit。
 - `smoke_*.py` 會寫入測試資料而且不會刪除；`smoke_maps.py` 建立的 `SMOKE-TEST-01` 會出現在空氣盒子選單裡。只在測試用的資料庫跑。
 - `tools/smoke_clothes.py` 還沒跟上兩個改動：資料中斷門檻已改成 3 分鐘（腳本還等 15 秒），`history?limit=` 改成時間分段平均（腳本還檢查 `truncated`）。要用之前先改這兩項。
-- 衣夾-01 沒在送資料時顯示離線，「開始晾衣」不能選它。
+- 衣夾-01 沒在送資料時顯示離線，「開始晾衣」不能選它。沒有板子時先 `make sim`。
+- 示範開關開著卻沒有任何示範資料：還沒執行過 `make seed`（或到晾衣紀錄頁按「建立示範資料」）。

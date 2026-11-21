@@ -4,40 +4,41 @@
 
 ## 目前狀態
 
-- 分支 `feat/garments-sessions`，接在 `feat/clothes-redesign`（PR #12）後面開 PR（PR stack），要等 PR #12 合併後再合。照功能分成幾個 commit：全站設定（示範資料開關）→ 每支衣夾的設定 → 衣物庫和晾衣。
-- migration：`002_app_settings.sql`、`003_clips.sql`、`004_garments_sessions.sql`（啟動時也會自動建表）。
+- 分支 `feat/garments-sessions`，接在 `feat/clothes-redesign`（PR #12）後面開 PR（PR stack），要等 PR #12 合併後再合。照功能分成幾個 commit：全站設定 → 每支衣夾的設定 → 衣物庫和晾衣 → 示範資料進資料庫 → 前端接上 API 與標籤。
 - 衣夾 ID 先照現在一支做：`clothes/raw`、`clothes_raw` 沒有改，`clips` 只有 `c1`。多衣夾之後另外開分支處理。
 
 ## 這一輪做好的部分
 
 | 項目 | 後端 | 前端 |
 | --- | --- | --- |
-| 示範資料開關 | `app_settings.demo_data`，`/api/v1/settings` | **已接上**：`useSettings.ts`，設定頁伺服器存好才切換 |
-| 每支衣夾的設定（配對空氣盒子、預測方式、名稱） | `clips`，`GET/PATCH /clothes/clips` | **已接上**：空氣盒子選單、衣夾詳細的「預測使用」 |
-| 衣物庫 | `garments`，`/clothes/garments` | 還沒接 |
-| 晾衣中、晾衣紀錄、次數 | `drying_sessions`，`/clothes/sessions*` | 還沒接 |
-| 預測（預計乾燥時間） | 歷史平均，沒有紀錄用材質預設值（`prediction.ts`） | 還沒接 |
+| 示範資料開關 | `app_settings.demo_data`，`/api/v1/settings` | 已接上：`useSettings.ts`，設定頁伺服器存好才切換 |
+| 每支衣夾的設定（配對空氣盒子、預測方式、名稱） | `clips`，`GET/PATCH/DELETE /clothes/clips` | 已接上：空氣盒子選單、衣夾詳細的「預測使用」 |
+| 衣物庫、晾衣中、晾衣紀錄 | `garments`、`drying_sessions`，`/clothes/garments`、`/clothes/sessions*` | 已接上：`useDrying.ts`，用衣夾-01 開始／換衣物／結束都會寫進資料庫 |
+| 預測（預計乾燥時間） | 歷史平均，沒有紀錄用材質預設值（`prediction.ts`） | 已接上：衣夾-01 顯示伺服器的預測 |
+| 示範資料 | 同一組表加 `is_demo`，複合 FK 保證真假不混；`make seed`、`POST /clothes/demo/reset` | 混在一起顯示並加「示範」標籤，統計只算真的 |
 
-資料表和 API 的細節在 CLAUDE.md。ER 圖：
+ER 圖：
 
 ```mermaid
 erDiagram
     devices  |o--o{ clips           : "配對空氣盒子"
-    clips    ||--o{ drying_sessions : "在這支衣夾上晾"
-    garments ||--o{ drying_sessions : "晾這件衣物"
+    clips    ||--o{ drying_sessions : "(clip_id, is_demo)"
+    garments ||--o{ drying_sessions : "(garment_id, is_demo)"
 ```
 
 `app_settings` 是獨立的 key-value 表；`clothes_raw` 和 session 用時間區間對應，不建 FK。
+migration：`002_app_settings.sql`～`005_demo_data.sql`（啟動時也會自動建表、補欄位）。
 
 ## 接下來要做的事
 
-1. **前端衣物和晾衣改用 API**：把 `useClothesMock.ts` 在「示範資料關閉」時用的 `clothes-local-v1`（`addGarment`、`updateGarment`、`startSession`、`swapGarment`、`endSession`）換成 `/clothes/garments`、`/clothes/sessions`。示範資料 `clothes-demo-v1` 繼續留在 localStorage。欄位對應：`totalMin` ↔ `predicted_min`，`actualMin` ↔ `actual_min`，`startedAt` ↔ `started_at`。
-2. **統計**：後端目前只有紀錄和 `total`。平均乾燥時間、誤差、各材質平均之後再決定怎麼做。
-3. **剩餘水分 %**、用重量曲線修正預測：還沒做。
-4. **多衣夾**：`clothes_raw` 加 `clip_id`、topic 改成可以分辨衣夾，`clips` 加列；`listClips()` 裡「`clothes_raw` 都算 `c1`」的判斷要跟著改。
-5. 其他沿用之前的清單：戶外天氣（`feat/outdoor-weather`）、連線事件、空夾歸零（韌體要先能收指令）。
+1. **統計**：前端目前只用真的紀錄自己算（`SessionsView.vue`），後端只有紀錄和 `total`。平均乾燥時間、誤差、各材質平均之後再決定怎麼做。
+2. **剩餘水分 %**、用重量曲線修正預測：還沒做。
+3. **多衣夾**：`clothes_raw` 加 `clip_id`、topic 改成可以分辨衣夾，`clips` 加列；`listClips()` 裡「`clothes_raw` 都算 `c1`」的判斷要跟著改。示範衣夾佔用 `c2`～`c8` 這幾個 id，真的衣夾編號要避開，或先把示範衣夾改名（`demo.ts`、前端 `DEMO_LOOK`）。
+4. 其他沿用之前的清單：戶外天氣（`feat/outdoor-weather`）、連線事件、空夾歸零（韌體要先能收指令）。
 
 ## 驗證方式
 
 - `make test`：後端單元測試，沒有資料庫時各端點應該回 503。
-- 有資料庫時的完整流程（建衣物 → 開始 → 重複開始得 409 → 換衣物 → dry 結束 → 紀錄和 `dry_count` → cancel）已經用 curl 跑過；測試資料跑完後已經刪掉。
+- 有資料庫時的完整流程（建衣物 → 開始 → 重複開始得 409 → 換衣物 → dry 結束 → 紀錄和 `dry_count` → cancel）已經用 curl 跑過；示範資料的過濾、真假混用 400、複合 FK、重設、`make seed` 重複執行也都測過。
+- 瀏覽器：示範關閉時用衣夾-01 新增衣物、開始、以已乾結束，紀錄寫進資料庫；示範開啟時混著顯示並有標籤、衣夾-01 只列真的衣物；資料庫停掉時開始晾衣會顯示錯誤、不跳頁。
+- 之前存在瀏覽器 `clothes-local-v1` 的紀錄不會自動搬到資料庫（也沒有刪掉）。
