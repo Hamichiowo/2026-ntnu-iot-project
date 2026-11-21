@@ -370,7 +370,7 @@ export async function swapGarment(sessionId: string, garmentId: string, now: Dat
       const rows = await tx`SELECT started_at, garment_id, ended_at, is_demo FROM drying_sessions WHERE id = ${sessionId} FOR UPDATE`;
       if (!rows.length) throw new HttpError(404, '找不到這筆晾衣');
       if (rows[0].ended_at) throw new HttpError(409, '這筆晾衣已經結束');
-      if (rows[0].garment_id === garmentId) return;
+      // The same garment still re-predicts: its material may just have been edited.
       const garment = (await tx`SELECT id, material, is_demo FROM garments WHERE id = ${garmentId}`)[0];
       if (!garment) throw new HttpError(404, '找不到這件衣物');
       if (garment.is_demo !== rows[0].is_demo) throw new HttpError(400, MIXED_DEMO);
