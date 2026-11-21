@@ -25,9 +25,19 @@ export async function ensureClothesSchema(): Promise<void> {
       touch_raw INTEGER CHECK (touch_raw BETWEEN 0 AND 4194303)
     )`;
   await sql`CREATE INDEX IF NOT EXISTS clothes_raw_timestamp_idx ON clothes_raw (timestamp DESC, id DESC)`;
+  await ensureAirboxNameIndex(sql);
   clothesState.schemaReady = true;
 }
 
+// Air box names must not repeat (ignoring case and surrounding spaces). If an old database already
+// has a repeat the index cannot be built; renaming still checks in code, so only warn.
+async function ensureAirboxNameIndex(sql: any) {
+  try {
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS devices_display_name_key ON devices (lower(btrim(display_name))) WHERE display_name IS NOT NULL`;
+  } catch (error) {
+    console.warn('[Clothes] Air box names repeat, unique index not created:', (error as Error).message);
+  }
+}
 
 function database() {
   if (!dbClient.isConnected() || !clothesState.schemaReady) throw new Error('Clothes database unavailable');
