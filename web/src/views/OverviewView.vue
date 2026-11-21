@@ -90,9 +90,9 @@
                 <button type="button" class="ui-btn" @click="panel = 'swap'">更換衣物</button>
               </div>
               <GarmentForm v-model="draft" id-prefix="ov-garment" placeholder="例如：白色班服" />
-              <p class="edit-note wa-tx">{{ predictChanged ? '樣式或材質變更後，會重新計算這次的乾燥預測' : '' }}</p>
+              <p class="edit-note wa-tx">{{ draftTaken ? `已經有名為「${draft.name.trim()}」的衣物，請換一個名稱` : predictChanged ? '樣式或材質變更後，會重新計算這次的乾燥預測' : '' }}</p>
               <div class="btns">
-                <button type="button" class="ui-btn ui-btn--primary ui-btn--lg" :disabled="!dirty || !draft.name.trim()" @click="save">儲存</button>
+                <button type="button" class="ui-btn ui-btn--primary ui-btn--lg" :disabled="!dirty || !draft.name.trim() || draftTaken" @click="save">儲存</button>
                 <button type="button" class="ui-btn ui-btn--lg" :disabled="!dirty" @click="revert">復原</button>
                 <button type="button" class="ui-btn ui-btn--ghost push" @click="closePanel">取消</button>
               </div>
@@ -299,6 +299,9 @@ function startEdit() {
 const previewGarment = computed(() => (panel.value === 'edit' || panel.value === 'confirm') && draft.value ? draft.value : null);
 const dirty = computed(() => !!(draft.value && cur.value &&
   (['name', 'style', 'color', 'material'] as const).some((k) => draft.value![k] !== cur.value!.garment[k])));
+// Another garment of the same kind (real or demo) already has this name.
+const draftTaken = computed(() => !!(draft.value && cur.value &&
+  mock.garmentNameTaken(draft.value.name, cur.value.session.demo, cur.value.garment.id)));
 const predictChanged = computed(() => !!(draft.value && cur.value &&
   (draft.value.style !== cur.value.garment.style || draft.value.material !== cur.value.garment.material)));
 const changes = computed(() => {
@@ -335,7 +338,10 @@ async function swapTo(garmentId: string) {
 async function addNew() {
   if (!cur.value) return;
   const { session } = cur.value;
-  const g = await mock.addGarment({ name: '新衣物', style: 'tee', color: '#F2F1EC', material: '棉' }, session.demo);
+  // Names must be unique, so pick 新衣物, 新衣物 2, … whichever is still free.
+  let name = '新衣物';
+  for (let n = 2; mock.garmentNameTaken(name, session.demo); n++) name = `新衣物 ${n}`;
+  const g = await mock.addGarment({ name, style: 'tee', color: '#F2F1EC', material: '棉' }, session.demo);
   if (!g || !await mock.swapGarment(session.id, g.id)) return;
   draft.value = fromGarment(g);
   isNewGarment.value = true;

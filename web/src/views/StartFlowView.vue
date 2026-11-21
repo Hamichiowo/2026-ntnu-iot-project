@@ -53,6 +53,7 @@
             </template>
             <template v-else>
               <GarmentForm v-model="draft" id-prefix="new-garment" placeholder="例如：白色班服" />
+              <p v-if="draftTaken" class="ui-note ui-note--error" role="alert">已經有名為「{{ draft.name.trim() }}」的衣物，請換一個名稱，或改選晾過的衣物。</p>
               <p class="ui-note ui-note--info">第一次晾的衣物還不知道乾燥時間，會先用材質估算，預測可能較不準；收衣後會自動記住。</p>
               <button type="button" class="ui-btn ui-btn--ghost start" @click="creating = false">← 改選晾過的衣物</button>
             </template>
@@ -150,8 +151,10 @@ const caption = computed(() => {
   return `${c}${chosen.value.name} · ${chosen.value.material} ${SHAPES[chosen.value.style].label}`;
 });
 
+// A new garment needs a name that no garment of the same kind (real or demo) already has.
+const draftTaken = computed(() => creating.value && mock.garmentNameTaken(draft.value.name, clip.value?.demo ?? false));
 const canNext = computed(() => (step.value === 1 && !!clip.value)
-  || (step.value === 2 && (creating.value ? draft.value.name.trim().length > 0 : !!garmentId.value)));
+  || (step.value === 2 && (creating.value ? draft.value.name.trim().length > 0 && !draftTaken.value : !!garmentId.value)));
 
 // Goes to the overview only once the server has stored the session; otherwise the error shows here.
 const starting = ref(false);

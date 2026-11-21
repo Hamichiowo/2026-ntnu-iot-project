@@ -19,7 +19,7 @@ export interface DryRecord {
   id: string; clipId: string; garmentId: string; startedAt: number; endedAt: number;
   actualMin: number | null; predictedMin: number; outcome: 'dry' | 'early'; demo: boolean;
 }
-export interface Clip { id: string; name: string; demo: boolean; predictMethod: Field; airboxId: string | null }
+export interface Clip { id: string; name: string; topic: string | null; demo: boolean; predictMethod: Field; airboxId: string | null }
 
 const MIN = 60000;
 const API = '/api/v1/clothes';
@@ -54,7 +54,7 @@ async function request(path: string, init: { method?: string; body?: unknown } =
 const ms = (value: string | null) => (value ? new Date(value).getTime() : 0);
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const toClip = (c: any): Clip => ({ id: c.id, name: c.name, demo: c.is_demo, predictMethod: c.predict_method, airboxId: c.airbox_id });
+const toClip = (c: any): Clip => ({ id: c.id, name: c.name, topic: c.topic, demo: c.is_demo, predictMethod: c.predict_method, airboxId: c.airbox_id });
 const toGarment = (g: any): Garment => ({
   id: g.id, name: g.name, style: g.style, color: g.color, material: g.material, demo: g.is_demo, dryCount: g.dry_count ?? 0, busy: !!g.busy,
 });

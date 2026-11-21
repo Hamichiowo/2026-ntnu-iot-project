@@ -26,15 +26,16 @@ export interface ClipDevice {
 type ClipLook = Omit<ClipDevice, 'id' | 'name' | 'live' | 'demo'>;
 
 // How each clip looks on the device page. Only 衣夾-01 is real; the rest is part of the demo.
+// Clip ids are UUIDs, so the demo looks are found by the demo clip's name.
 const REAL_LOOK: ClipLook = { topic: 'clothes/raw', chip: 'ESP32-S3', ip: null, fw: null, signal: '良好', bootMinAgo: 0, offlineMinAgo: null, issue: null, lastBox: '' };
 const DEMO_LOOK: Record<string, ClipLook> = {
-  c2: { topic: 'clothes/02/raw', chip: 'ESP32-S3', ip: '192.168.0.43', fw: '0.3.1', signal: '偏弱', bootMinAgo: 47, offlineMinAgo: null, issue: '重量感測連續 12 筆讀取失敗，請檢查秤重感測器排線', lastBox: '' },
-  c3: { topic: 'clothes/03/raw', chip: 'ESP32-S3', ip: '192.168.0.44', fw: '0.3.1', signal: '良好', bootMinAgo: 130, offlineMinAgo: null, issue: null, lastBox: '' },
-  c4: { topic: 'clothes/04/raw', chip: 'ESP32-S3', ip: '192.168.0.45', fw: '0.3.1', signal: '良好', bootMinAgo: 150, offlineMinAgo: null, issue: null, lastBox: '' },
-  c5: { topic: 'clothes/05/raw', chip: 'ESP32-S3', ip: '192.168.0.46', fw: '0.3.0', signal: '良好', bootMinAgo: 95, offlineMinAgo: null, issue: null, lastBox: '' },
-  c6: { topic: 'clothes/06/raw', chip: 'ESP32-S3', ip: '192.168.0.47', fw: '0.3.1', signal: '良好', bootMinAgo: 1440, offlineMinAgo: null, issue: null, lastBox: '陽台' },
-  c7: { topic: 'clothes/07/raw', chip: 'ESP32-S3', ip: '192.168.0.48', fw: '0.3.1', signal: '偏弱', bootMinAgo: 380, offlineMinAgo: null, issue: null, lastBox: '浴室' },
-  c8: { topic: 'clothes/08/raw', chip: 'ESP32-S3', ip: null, fw: '0.2.4', signal: '偏弱', bootMinAgo: 0, offlineMinAgo: 2 * 1440 + 90, issue: null, lastBox: '陽台' },
+  '衣夾-02': { topic: 'clothes/02/raw', chip: 'ESP32-S3', ip: '192.168.0.43', fw: '0.3.1', signal: '偏弱', bootMinAgo: 47, offlineMinAgo: null, issue: '重量感測連續 12 筆讀取失敗，請檢查秤重感測器排線', lastBox: '' },
+  '衣夾-03': { topic: 'clothes/03/raw', chip: 'ESP32-S3', ip: '192.168.0.44', fw: '0.3.1', signal: '良好', bootMinAgo: 130, offlineMinAgo: null, issue: null, lastBox: '' },
+  '衣夾-04': { topic: 'clothes/04/raw', chip: 'ESP32-S3', ip: '192.168.0.45', fw: '0.3.1', signal: '良好', bootMinAgo: 150, offlineMinAgo: null, issue: null, lastBox: '' },
+  '衣夾-05': { topic: 'clothes/05/raw', chip: 'ESP32-S3', ip: '192.168.0.46', fw: '0.3.0', signal: '良好', bootMinAgo: 95, offlineMinAgo: null, issue: null, lastBox: '' },
+  '衣夾-06': { topic: 'clothes/06/raw', chip: 'ESP32-S3', ip: '192.168.0.47', fw: '0.3.1', signal: '良好', bootMinAgo: 1440, offlineMinAgo: null, issue: null, lastBox: '陽台' },
+  '衣夾-07': { topic: 'clothes/07/raw', chip: 'ESP32-S3', ip: '192.168.0.48', fw: '0.3.1', signal: '偏弱', bootMinAgo: 380, offlineMinAgo: null, issue: null, lastBox: '浴室' },
+  '衣夾-08': { topic: 'clothes/08/raw', chip: 'ESP32-S3', ip: null, fw: '0.2.4', signal: '偏弱', bootMinAgo: 0, offlineMinAgo: 2 * 1440 + 90, issue: null, lastBox: '陽台' },
 };
 const PLAIN_DEMO_LOOK: ClipLook = { ...REAL_LOOK, topic: '—' };
 
@@ -104,16 +105,22 @@ function clipStatus(d: ClipDevice): ClipStatus {
   }
   if (d.offlineMinAgo != null) return { online: false, tone: 'off', label: '離線', lastSeenMs: d.offlineMinAgo * MIN, uptimeMin: null };
   return { online: true, tone: d.issue ? 'warn' : 'on', label: d.issue ? '感測異常' : '在線',
-    lastSeenMs: (1 + (d.id.charCodeAt(1) % 3)) * 1000, uptimeMin: d.bootMinAgo + Math.round((now.value - loadedAt) / MIN) };
+    lastSeenMs: (1 + (d.name.charCodeAt(d.name.length - 1) % 3)) * 1000, uptimeMin: d.bootMinAgo + Math.round((now.value - loadedAt) / MIN) };
 }
 
 // Clips from the server, dressed with how they look. The server leaves demo clips out with the demo off.
 const devices = computed<ClipDevice[]>(() => clips.value.map((c) => ({
+  ...(c.demo ? DEMO_LOOK[c.name] ?? PLAIN_DEMO_LOOK : { ...REAL_LOOK, topic: c.topic ?? '—' }),
   id: c.id, name: c.name, live: !c.demo, demo: c.demo,
-  ...(c.demo ? DEMO_LOOK[c.id] ?? PLAIN_DEMO_LOOK : REAL_LOOK),
 })));
 const clipById = (id: string) => devices.value.find((d) => d.id === id);
 const methodOf = (clipId: string): Method => clips.value.find((c) => c.id === clipId)?.predictMethod ?? 'hx711_raw';
+
+// Same rule as the server: names repeat neither among real nor among demo garments
+// (case and surrounding spaces ignored). Used to warn before saving; the server checks again.
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+const garmentNameTaken = (name: string, demo: boolean, exceptId?: string) =>
+  !!name.trim() && garments.value.some((g) => g.demo === demo && g.id !== exceptId && sameName(g.name, name));
 
 const activeClipIds = computed(() => new Set(sessions.value.map((s) => s.clipId)));
 const busyGarmentIds = computed(() => new Set(sessions.value.map((s) => s.garmentId)));
@@ -156,7 +163,7 @@ export function useClothesMock() {
   useDrying();
   return {
     state, now, weather, devices, activeClipIds, busyGarmentIds, demoEnabled, actionError, loaded: dryingState.loaded, loadError: dryingState.loadError,
-    garmentById, dryCount, predictMinutes, clipStatus, clipById, methodOf,
+    garmentById, dryCount, predictMinutes, clipStatus, clipById, methodOf, garmentNameTaken,
     updateGarment, addGarment, swapGarment, startSession, endSession, setMethod, removeDevice, clearFocus, reset, setDemoEnabled,
   };
 }

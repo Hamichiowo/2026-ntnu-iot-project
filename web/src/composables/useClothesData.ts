@@ -33,10 +33,11 @@ const loaded = ref(false);
 const air = ref<AirLatest | null>(null);  // null: no air box has ever reported
 
 // Per-clip settings live on the server (/api/v1/clothes/clips), so every browser pairs the clip
-// with the same air box. There is one physical clip for now.
-export const CLIP_ID = 'c1';
+// with the same air box. There is one physical clip for now: the real clip with an MQTT topic.
+// Its id is a UUID from the server; until it is known, requests leave ?clip= out and the server
+// uses that clip anyway.
 export type ClipSettings = {
-  id: string; name: string; airbox_id: string | null; resolved_airbox_id: string | null;
+  id: string; name: string; topic: string | null; is_demo: boolean; airbox_id: string | null; resolved_airbox_id: string | null;
   predict_method: Field;
 };
 const clipSettings = ref<ClipSettings | null>(null);
@@ -54,8 +55,11 @@ const airboxOptions = computed(() => {
 });
 export const airboxLabel = (box: Airbox) =>
   `${box.display_name ? `${box.display_name}（${box.device_id}）` : box.device_id}${box.connected ? '' : '（離線）'}`;
-// The server picks the clip's air box from ?clip=.
-export const withClip = (params: URLSearchParams) => { params.set('clip', CLIP_ID); return params; };
+// The server picks the clip's air box from ?clip= (the real clip when left out).
+export const withClip = (params: URLSearchParams) => {
+  if (clipSettings.value) params.set('clip', clipSettings.value.id);
+  return params;
+};
 let airboxVersion = 0;  // bumps when the pairing changes, so late answers for the old box are dropped
 
 const controllers = new Set<AbortController>();
@@ -85,7 +89,7 @@ async function loadAirboxes() {
     ]);
     if (!liveUsers || version !== airboxVersion) return;
     airboxes.value = boxes.airboxes; defaultAirboxId.value = boxes.default_id; airboxesLoaded = Date.now();
-    clipSettings.value = clips.clips.find((clip: ClipSettings) => clip.id === CLIP_ID) ?? null;
+    clipSettings.value = clips.clips.find((clip: ClipSettings) => !clip.is_demo && clip.topic) ?? null;
   } catch { /* the picker keeps its last list */ }
 }
 
@@ -102,7 +106,8 @@ function airboxChanged(id: string | null) {
 // Saves a clip setting on the server; the page only changes once it is stored. Returns false on failure.
 async function saveClip(patch: Partial<Pick<ClipSettings, 'airbox_id'>>) {
   try {
-    const data = await request(`/api/v1/clothes/clips/${CLIP_ID}`, { method: 'PATCH', body: patch });
+    if (!clipSettings.value) throw new Error('還沒有讀到衣夾資料，請稍後再試');
+    const data = await request(`/api/v1/clothes/clips/${clipSettings.value.id}`, { method: 'PATCH', body: patch });
     const before = defaultAirboxId.value;
     clipSettings.value = data.clip; clipSettingError.value = '';
     if (data.clip.resolved_airbox_id !== before) airboxChanged(data.clip.resolved_airbox_id);
