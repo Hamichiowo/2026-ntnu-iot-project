@@ -16,11 +16,11 @@
         </label>
         <p class="switch-note">
           {{ demoEnabled
-            ? '目前顯示示範的衣夾-02～08、衣物、晾衣紀錄、預測與天氣。關閉後只留下實際的衣夾與空氣盒子。'
-            : '目前只顯示實際的衣夾與空氣盒子；衣物與晾衣紀錄只會有你實際記錄的內容。示範資料仍保留，重新開啟就會回來。' }}
+            ? '目前一起顯示示範的衣夾-02～08、衣物、晾衣紀錄與天氣，並標上「示範」；統計只算實際資料。關閉後只留下實際的資料。'
+            : '目前只顯示實際的衣夾、衣物與晾衣紀錄。示範資料仍保留在伺服器，重新開啟就會回來。' }}
         </p>
         <p v-if="demoError || settingsError" class="ui-note ui-note--error" role="alert">{{ demoError || settingsError }}</p>
-        <p class="switch-note muted">這個開關存在伺服器，所有瀏覽器都一樣；你記錄的衣物、晾衣紀錄目前還存在這台瀏覽器。</p>
+        <p class="switch-note muted">這個開關、衣物與晾衣紀錄都存在伺服器，所有瀏覽器都一樣。示範資料以 is_demo 標記，第一次使用請執行 make seed 建立。</p>
       </div>
 
       <!-- Health Card -->

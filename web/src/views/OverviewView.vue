@@ -34,7 +34,7 @@
             <!-- view -->
             <div v-if="panel === 'view'" class="view">
               <div class="view-top">
-                <span class="meta"><i :style="{ background: cur.garment.color }"></i><span class="ellipsis">{{ cur.garment.material }} · {{ SHAPES[cur.garment.style].label }} · {{ cur.clip.name }}</span></span>
+                <span class="meta"><i :style="{ background: cur.garment.color }"></i><DemoTag v-if="cur.session.demo" /><span class="ellipsis">{{ cur.garment.material }} · {{ SHAPES[cur.garment.style].label }} · {{ cur.clip.name }}</span></span>
                 <div class="btns">
                   <router-link :to="`/clips/${cur.clip.id}`" class="ui-btn">衣夾詳細</router-link>
                   <button type="button" class="ui-btn" @click="startEdit">編輯衣物</button>
@@ -204,7 +204,7 @@
         <section v-if="items.length" class="panel grow">
           <div class="row-head"><h2>晾衣中</h2><router-link to="/devices" class="ac-tx">全部設備</router-link></div>
           <button v-for="(item, i) in items" :key="item.session.id" type="button" class="drying-row" @click="go(i); scrollTop()">
-            <span class="drying-top"><span>{{ item.garment.name }} <small class="muted">{{ item.clip.name }}</small></span>
+            <span class="drying-top"><span>{{ item.garment.name }} <small class="muted">{{ item.clip.name }}</small> <DemoTag v-if="item.session.demo" /></span>
               <span :class="item.clip.issue ? 'wa-tx' : 'ac-tx'">{{ item.clip.issue ? '重量感測異常' : item.dryText }}</span></span>
             <span class="ui-bar"><span :style="{ width: item.moist == null ? '0%' : `${100 - item.moist}%`, background: item.clip.issue ? 'var(--wa)' : undefined }"></span></span>
           </button>
@@ -212,7 +212,7 @@
         <section class="panel grow">
           <div class="row-head"><h2>上次晾衣</h2><router-link to="/sessions" class="ac-tx">全部紀錄</router-link></div>
           <div v-if="lastRecord" class="last">
-            <div class="last-top"><span>{{ lastRecord.name }}</span><span>{{ lastRecord.duration }}</span></div>
+            <div class="last-top"><span>{{ lastRecord.name }} <DemoTag v-if="lastRecord.demo" /></span><span>{{ lastRecord.duration }}</span></div>
             <span class="muted">{{ lastRecord.when }}</span>
           </div>
           <p v-else class="muted">還沒有晾衣紀錄</p>
@@ -220,8 +220,8 @@
         </section>
       </div>
 
-      <p v-if="mock.demoEnabled.value" class="demo-note">示範資料：衣物、晾衣紀錄、衣夾-02～05 的剩餘水分與乾燥預測、戶外天氣目前為前端模擬；空氣盒子溫濕度為實際資料。衣夾-01 的剩餘水分與乾燥預測尚未實作，原始感測值請到衣夾詳細查看。可在設定關閉示範資料。</p>
-      <p v-else class="demo-note">示範資料已關閉。衣物與晾衣紀錄目前存在這台瀏覽器；空氣盒子溫濕度為實際資料。剩餘水分、乾燥預測與戶外天氣尚未實作。</p>
+      <p v-if="mock.demoEnabled.value" class="demo-note">標了「示範」的衣物與晾衣是示範資料，剩餘水分與乾燥曲線為模擬；戶外天氣也是示範資料。衣夾-01 的晾衣、衣物與紀錄是實際資料，存在伺服器；它的預計乾燥時間依這件衣物過去的乾燥時間估算，剩餘水分尚未實作。空氣盒子溫濕度為實際資料。可在設定關閉示範資料。</p>
+      <p v-else class="demo-note">衣物與晾衣紀錄存在伺服器；預計乾燥時間依這件衣物過去的乾燥時間估算（第一次晾用材質預設值）。空氣盒子溫濕度為實際資料。剩餘水分與戶外天氣尚未實作。</p>
     </div>
   </div>
 </template>
@@ -231,6 +231,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import GarmentFigure from '../components/clothes/GarmentFigure.vue';
 import GarmentForm from '../components/clothes/GarmentForm.vue';
 import DryingCurve from '../components/clothes/DryingCurve.vue';
+import DemoTag from '../components/clothes/DemoTag.vue';
 import AirboxSelect from '../components/clothes/AirboxSelect.vue';
 import { BASE_MINUTES, SHAPES, colorName, type Material } from '../constants/garments';
 import { useTheme } from '../composables/useTheme';
@@ -398,7 +399,7 @@ const lastRecord = computed(() => {
   if (!done) return null;
   const g = garmentById(done.garmentId);
   const end = done.startedAt + done.actualMin! * MIN;
-  return { name: g?.name ?? '已刪除的衣物', duration: shortDuration(done.actualMin!),
+  return { name: g?.name ?? '已刪除的衣物', demo: done.demo, duration: shortDuration(done.actualMin!),
     when: `${dayLabel(done.startedAt)} ${clock(done.startedAt)} 晾出，${clock(end)} 收衣` };
 });
 const availableClips = computed(() => mock.devices.value.filter((d) => !mock.activeClipIds.value.has(d.id) && mock.clipStatus(d).online).length);

@@ -9,7 +9,7 @@
       <router-link to="/devices" class="back">← 設備狀況</router-link>
       <div class="page-head">
         <div class="title">
-          <h1>{{ device.name }}</h1>
+          <h1>{{ device.name }} <DemoTag v-if="device.demo" /></h1>
           <span class="status" :class="`status--${status.tone}`"><i></i>{{ status.label }}</span>
           <span v-if="device.live" class="conn muted">{{ connectionText }}</span>
         </div>
@@ -168,6 +168,7 @@ import { useRoute } from 'vue-router';
 import { Line } from 'vue-chartjs';
 import { Chart as ChartJS, LinearScale, PointElement, LineElement, Tooltip, Legend, type ChartOptions, type Plugin } from 'chart.js';
 import { useTheme } from '../composables/useTheme';
+import DemoTag from '../components/clothes/DemoTag.vue';
 import { PRESETS, SENSORS, useClothesHistory, withClip, type Field, type Sensor } from '../composables/useClothesData';
 import { useClothesMock, type Method } from '../composables/useClothesMock';
 import { DAY_MS, agoText, clock, formatAir, formatRaw, formatTime, fromTaipeiInput, toTaipeiInput } from '../utils/format';

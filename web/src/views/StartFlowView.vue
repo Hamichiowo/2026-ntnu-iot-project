@@ -26,7 +26,7 @@
             <p class="muted">只列出目前沒有在用的衣夾，離線的衣夾無法使用。</p>
             <button v-for="o in clipOptions" :key="o.device.id" type="button" class="option" :class="{ on: clipId === o.device.id }"
               :disabled="!o.status.online" :aria-pressed="clipId === o.device.id" @click="clipId = o.device.id">
-              <span class="option-text"><b>{{ o.device.name }}</b><small>{{ o.meta }}</small></span>
+              <span class="option-text"><b>{{ o.device.name }} <DemoTag v-if="o.device.demo" /></b><small>{{ o.meta }}</small></span>
               <span class="status" :class="o.status.online ? 'status--on' : 'status--off'"><i></i>{{ o.status.online ? '在線' : '離線' }}</span>
             </button>
             <p v-if="!clipOptions.length" class="muted">所有衣夾都在使用中，先到總覽結束一次晾衣。</p>
@@ -44,7 +44,7 @@
                 <button v-for="g in library" :key="g.id" type="button" class="option" :class="{ on: garmentId === g.id }"
                   :disabled="g.busy" :aria-pressed="garmentId === g.id" @click="garmentId = g.id">
                   <i class="swatch" :style="{ background: g.color }"></i>
-                  <span class="option-text"><b>{{ g.name }}</b><small>{{ g.meta }}</small></span>
+                  <span class="option-text"><b>{{ g.name }} <DemoTag v-if="g.demo" /></b><small>{{ g.meta }}</small></span>
                   <span class="tag">{{ g.busy ? '晾衣中' : '' }}</span>
                 </button>
                 <p v-if="!library.length" class="muted">{{ sameKind.length ? '找不到符合的衣物' : '還沒有衣物，請先新增一件' }}</p>
@@ -80,8 +80,8 @@
           <p v-if="mock.actionError.value" class="ui-note ui-note--error" role="alert">{{ mock.actionError.value }}</p>
         </div>
       </div>
-      <p v-if="mock.demoEnabled.value" class="demo-note">示範資料：衣物庫與晾衣紀錄目前存在這台瀏覽器；空氣盒子清單為實際資料。可在設定關閉示範資料。</p>
-      <p v-else class="demo-note">示範資料已關閉。衣物與晾衣紀錄目前存在這台瀏覽器；空氣盒子清單為實際資料。衣夾-01 的乾燥預測尚未實作。</p>
+      <p v-if="mock.demoEnabled.value" class="demo-note">衣物與晾衣紀錄存在伺服器。標了「示範」的衣夾與衣物是示範資料，只能互相搭配；衣夾-01 是實際的衣夾，只能選實際的衣物。可在設定關閉示範資料。</p>
+      <p v-else class="demo-note">衣物與晾衣紀錄存在伺服器。預計乾燥時間依這件衣物過去的乾燥時間估算，第一次晾的衣物用材質預設值。</p>
     </div>
   </section>
 </template>
@@ -91,6 +91,7 @@ import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import GarmentFigure from '../components/clothes/GarmentFigure.vue';
 import GarmentForm from '../components/clothes/GarmentForm.vue';
+import DemoTag from '../components/clothes/DemoTag.vue';
 import { SHAPES } from '../constants/garments';
 import { useTheme } from '../composables/useTheme';
 import AirboxSelect from '../components/clothes/AirboxSelect.vue';

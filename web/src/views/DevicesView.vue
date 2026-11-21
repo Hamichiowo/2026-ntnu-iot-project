@@ -12,7 +12,7 @@
     <section aria-label="衣夾" class="grid">
       <article v-for="c in clips" :key="c.device.id" class="dev" :class="{ warn: c.status.tone === 'warn', off: c.status.tone === 'off' }">
         <div class="dev-head">
-          <h2>{{ c.device.name }} <small v-if="c.device.live" class="real">實體裝置</small></h2>
+          <h2>{{ c.device.name }} <small v-if="c.device.live" class="real">實體裝置</small><DemoTag v-else /></h2>
           <span class="status" :class="`status--${c.status.tone}`"><i></i>{{ c.status.label }}</span>
         </div>
         <div class="facts">
@@ -95,7 +95,7 @@
       </div>
     </section>
 
-    <p v-if="mock.demoEnabled.value" class="demo-note">示範資料：衣夾-02～08 與連線事件為前端模擬；衣夾-01 與空氣盒子為實際資料。可在設定關閉示範資料。</p>
+    <p v-if="mock.demoEnabled.value" class="demo-note">標了「示範」的衣夾（衣夾-02～08）和連線事件是示範資料，狀態為模擬；衣夾-01 與空氣盒子為實際資料。可在設定關閉示範資料。</p>
     <p v-else class="demo-note">示範資料已關閉，只顯示實際的衣夾與空氣盒子。</p>
   </div>
 </template>
@@ -104,6 +104,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useClothesLive } from '../composables/useClothesData';
 import { useClothesMock } from '../composables/useClothesMock';
+import DemoTag from '../components/clothes/DemoTag.vue';
 import { useWebSocket } from '../composables/useWebSocket';
 import { agoText, clock, dayLabel, formatAir, formatRaw, minutesText } from '../utils/format';
 

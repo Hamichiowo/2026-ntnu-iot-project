@@ -27,7 +27,7 @@
               <tr v-if="!rows.length"><td colspan="5" class="muted">還沒有晾衣紀錄</td></tr>
               <tr v-for="row in rows" :key="row.id">
                 <td>{{ row.date }}</td>
-                <td class="strong">{{ row.name }} <small class="muted">{{ row.material }}</small></td>
+                <td class="strong">{{ row.name }} <small class="muted">{{ row.material }}</small> <DemoTag v-if="row.demo" /></td>
                 <td :class="row.actualTone">{{ row.actual }}</td>
                 <td>{{ row.predicted }}</td>
                 <td :class="row.errorTone">{{ row.error }}</td>
@@ -47,7 +47,7 @@
           <p v-if="!byMaterial.length" class="muted">還沒有完成的紀錄</p>
         </section>
         <section class="panel">
-          <h2>感測法預測誤差</h2>
+          <h2>感測法預測誤差 <DemoTag v-if="predicting" /></h2>
           <div v-for="m in methods" :key="m.key" class="method-row">
             <span>{{ m.label }}</span>
             <span v-if="!predicting" class="muted">NONE</span>
@@ -58,16 +58,17 @@
     </div>
 
     <div v-if="predicting" class="demo-note foot">
-      <span>示範資料：晾衣紀錄、預測與誤差目前為前端模擬，存在這台瀏覽器。可在設定關閉示範資料。</span>
-      <button type="button" class="ui-btn ui-btn--ghost" @click="resetDemo">重設示範資料</button>
+      <span>標了「示範」的紀錄是示範資料（存在伺服器，以 is_demo 標記），不列入上方統計；「感測法預測誤差」也是示範數字。{{ hasDemo ? '' : '目前還沒有示範資料，執行 make seed 或按右邊的按鈕建立。' }}可在設定關閉示範資料。</span>
+      <button type="button" class="ui-btn ui-btn--ghost" @click="resetDemo">{{ hasDemo ? '重設示範資料' : '建立示範資料' }}</button>
     </div>
-    <p v-else class="demo-note">示範資料已關閉，只列出實際的晾衣紀錄（目前存在這台瀏覽器）。乾燥預測尚未實作，預測與誤差顯示 NONE。</p>
+    <p v-else class="demo-note">只列出實際的晾衣紀錄（存在伺服器）。預測是這件衣物過去的平均乾燥時間，第一次晾用材質預設值；提早收起的紀錄不列入誤差。</p>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
 import { SENSORS } from '../composables/useClothesData';
+import DemoTag from '../components/clothes/DemoTag.vue';
 import { METHOD_ERROR, useClothesMock } from '../composables/useClothesMock';
 import { TAIPEI_MS, monthDay, shortDuration } from '../utils/format';
 
@@ -76,6 +77,7 @@ const mock = useClothesMock();
 // The per-method error panel is demo data only.
 const predicting = computed(() => mock.demoEnabled.value);
 
+const hasDemo = computed(() => mock.state.records.some((r) => r.demo) || mock.state.sessions.some((s) => s.demo));
 const nameOf = (garmentId: string) => mock.garmentById(garmentId)?.name ?? '已刪除的衣物';
 const materialOf = (garmentId: string) => mock.garmentById(garmentId)?.material ?? '—';
 
@@ -129,14 +131,14 @@ const methods = computed(() => {
 
 function exportCsv() {
   const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
-  const lines = [['開始時間（台北）', '衣物', '材質', '實際（分）', '預測（分）', '結果'].map(esc).join(',')];
+  const lines = [['開始時間（台北）', '衣物', '材質', '實際（分）', '預測（分）', '結果', '資料來源'].map(esc).join(',')];
   const all = [
-    ...mock.state.sessions.map((s) => ({ at: s.startedAt, g: s.garmentId, actual: '', predicted: s.totalMin, result: '晾衣中' })),
-    ...mock.state.records.map((r) => ({ at: r.startedAt, g: r.garmentId, actual: r.actualMin ?? '', predicted: r.predictedMin, result: r.outcome === 'dry' ? '已乾' : '提早收起' })),
+    ...mock.state.sessions.map((s) => ({ at: s.startedAt, g: s.garmentId, actual: '', predicted: s.totalMin, result: '晾衣中', demo: s.demo })),
+    ...mock.state.records.map((r) => ({ at: r.startedAt, g: r.garmentId, actual: r.actualMin ?? '', predicted: r.predictedMin, result: r.outcome === 'dry' ? '已乾' : '提早收起', demo: r.demo })),
   ].sort((a, b) => b.at - a.at);
   for (const r of all) {
     const local = new Date(r.at + TAIPEI_MS).toISOString().slice(0, 16).replace('T', ' ');
-    lines.push([local, nameOf(r.g), materialOf(r.g), r.actual, r.predicted, r.result].map(esc).join(','));
+    lines.push([local, nameOf(r.g), materialOf(r.g), r.actual, r.predicted, r.result, r.demo ? '示範' : '實際'].map(esc).join(','));
   }
   const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
