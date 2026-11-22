@@ -3,6 +3,9 @@ import { apiFetch } from './useAuth';
 
 export interface OutdoorWeather {
   county: string;
+  district: string;
+  station_id: string;
+  station_name: string;
   observed_at: string;
   weather: string | null;
   temp: number | null;
@@ -28,6 +31,8 @@ export interface ForecastPeriod {
 
 const counties = ref<string[]>([]);
 const county = ref('');
+const districts = ref<string[]>([]);
+const district = ref('');
 const outdoor = ref<OutdoorWeather | null>(null);
 const forecast = ref<ForecastPeriod[]>([]);
 const forecastUpdatedAt = ref<number | null>(null);
@@ -51,11 +56,12 @@ async function request(path: string) {
 }
 
 async function loadOutdoor() {
-  if (!county.value) return;
+  if (!county.value || !district.value) return;
   const requestId = ++latestRequest;
   loading.value = true;
   try {
-    const data = await request(`/api/v1/weather/detail?county=${encodeURIComponent(county.value)}`);
+    const params = new URLSearchParams({ county: county.value, district: district.value });
+    const data = await request(`/api/v1/weather/detail?${params}`);
     if (requestId !== latestRequest) return;
     outdoor.value = data.data.current;
     forecast.value = data.data.forecast;
@@ -72,14 +78,42 @@ async function loadOutdoor() {
   }
 }
 
+async function loadDistricts() {
+  if (!county.value) return;
+  const requestId = ++latestRequest;
+  loading.value = true;
+  district.value = '';
+  districts.value = [];
+  outdoor.value = null;
+  forecast.value = [];
+  forecastUpdatedAt.value = null;
+  try {
+    const data = await request(`/api/v1/weather/districts?county=${encodeURIComponent(county.value)}`);
+    if (requestId !== latestRequest) return;
+    districts.value = data.data;
+    let saved = '';
+    try { saved = localStorage.getItem(`outdoorDistrict:${county.value}`) || ''; } catch { /* cache only */ }
+    district.value = districts.value.includes(saved) ? saved : data.default || districts.value[0] || '';
+    if (!district.value) error.value = '這個縣市沒有可用的行政區觀測資料';
+  } catch {
+    if (requestId !== latestRequest) return;
+    error.value = '氣象署行政區資料暫時無法取得';
+  } finally {
+    if (requestId === latestRequest) loading.value = false;
+  }
+}
+
 async function loadCounties() {
   try {
     const data = await request('/api/v1/weather/counties');
     counties.value = data.data;
     let saved = '';
     try { saved = localStorage.getItem('outdoorCounty') || ''; } catch { /* cache only */ }
-    county.value = counties.value.includes(saved) ? saved : data.default || counties.value[0] || '';
+    const nextCounty = counties.value.includes(saved) ? saved : data.default || counties.value[0] || '';
+    const countyChanged = county.value !== nextCounty;
+    county.value = nextCounty;
     if (!county.value) error.value = '氣象署沒有可用的測站資料';
+    else if (!countyChanged) void loadDistricts();
   } catch {
     error.value = '氣象署資料暫時無法取得';
   }
@@ -88,16 +122,23 @@ async function loadCounties() {
 watch(county, (value) => {
   if (!value) return;
   try { localStorage.setItem('outdoorCounty', value); } catch { /* cache only */ }
+  void loadDistricts();
+});
+
+watch(district, (value) => {
+  if (!value || !county.value) return;
+  try { localStorage.setItem(`outdoorDistrict:${county.value}`, value); } catch { /* cache only */ }
   void loadOutdoor();
 });
 
 export function useOutdoorWeather() {
   onMounted(() => {
     consumers += 1;
-    if (counties.value.length) void loadOutdoor();
+    if (county.value && district.value) void loadOutdoor();
+    else if (county.value) void loadDistricts();
     else void loadCounties();
     timer ??= setInterval(() => {
-      if (counties.value.length) void loadOutdoor();
+      if (county.value && district.value) void loadOutdoor();
       else void loadCounties();
     }, 10 * 60 * 1000);
   });
@@ -108,5 +149,5 @@ export function useOutdoorWeather() {
       timer = undefined;
     }
   });
-  return { counties, county, outdoor, forecast, forecastUpdatedAt, loading, error, refresh: loadOutdoor };
+  return { counties, county, districts, district, outdoor, forecast, forecastUpdatedAt, loading, error, refresh: loadOutdoor };
 }
