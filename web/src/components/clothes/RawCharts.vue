@@ -3,8 +3,6 @@
     <div class="sensor-head">
       <h2><i :style="{ background: palette[s.color] }"></i>{{ s.method }} <small class="muted">{{ s.hardware }}</small>
         <em v-if="s.key === chosen" class="chosen-tag">預測使用</em></h2>
-      <span v-if="latest !== undefined && ohm(s.key) && latestOhm" class="reading num">{{ latestOhm }}<small> 布料電阻</small></span>
-      <span v-else-if="latest !== undefined" class="reading num">{{ formatRaw(latest?.[s.key]) }}<small> 原始計數</small></span>
     </div>
     <p v-if="latest && latest[s.key] === null" class="wa-tx small">本筆讀取失敗</p>
     <div class="chart" :class="{ selectable }" :title="selectable ? '按住拖曳可選取時段' : undefined">
@@ -35,7 +33,7 @@ import { Chart as ChartJS, LinearScale, LogarithmicScale, PointElement, LineElem
 import { useTheme } from '../../composables/useTheme';
 import { SENSORS, type AirReading, type Field, type Reading, type Sensor } from '../../composables/useClothesData';
 import { formatAir, formatRaw, formatTime } from '../../utils/format';
-import { countToOhm, dividerAt, formatOhm, ohmMax, ohmText, type Divider } from '../../utils/resistance';
+import { countToOhm, dividerAt, formatOhm, ohmMax, type Divider } from '../../utils/resistance';
 
 ChartJS.register(LinearScale, LogarithmicScale, PointElement, LineElement, Tooltip, Legend);
 
@@ -47,7 +45,7 @@ const props = withDefaults(defineProps<{
   bucketSeconds?: number;
   sensors?: Sensor[];
   chosen?: Field;
-  latest?: Reading | null;  // undefined = no reading in the header
+  latest?: Reading | null;  // newest reading: flags a failed read and gives the raw count in the note
   airDeviceId?: string | null;
   plugins?: Plugin<'line'>[];
   // The clip's divider settings: with any, the resistance chart shows ohms on a log scale.
@@ -70,7 +68,6 @@ const timeTick = (value: number) => {
 const DAY = 24 * 60 * 60000;
 const hasDividers = computed(() => !!props.dividers?.length);
 const ohm = (key: Field) => key === 'ads1115_raw' && hasDividers.value;
-const latestOhm = computed(() => props.latest ? ohmText(props.latest.ads1115_raw, new Date(props.latest.timestamp).getTime(), props.dividers) : null);
 // The settings used inside the window on screen (not just the newest one), each with its own limit.
 const shortTime = (time: number) => new Date(time).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false,
   month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -219,8 +216,6 @@ const envChartOptions = computed<ChartOptions<'line'>>(() => {
 .sensor-head h2 i { width: 12px; height: 12px; flex: 0 0 auto; }
 .sensor-head h2 small { font-size: 0.875rem; font-weight: 400; }
 .chosen-tag { font-style: normal; font-size: 0.75rem; font-weight: 500; padding: 2px 8px; border-radius: 999px; background: var(--ac-soft); color: var(--ac-tx); }
-.reading { font-size: 2.25rem; font-weight: 700; line-height: 1; }
-.reading small { font-size: 1rem; color: var(--mu); font-weight: 400; }
 .chart { height: 195px; }
 .chart.selectable { cursor: crosshair; user-select: none; }
 .chart.selectable :deep(canvas) { touch-action: pan-y; }  /* horizontal finger drags select; vertical ones still scroll */
