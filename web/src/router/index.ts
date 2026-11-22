@@ -7,6 +7,7 @@ import StartFlowView from '../views/StartFlowView.vue';
 import HistoryView from '../views/HistoryView.vue';
 import DeviceDetailView from '../views/DeviceDetailView.vue';
 import SettingsView from '../views/SettingsView.vue';
+import WeatherView from '../views/WeatherView.vue';
 
 const routes = [
   // 智慧衣夾
@@ -15,6 +16,7 @@ const routes = [
   { path: '/devices', name: 'Devices', component: DevicesView },
   { path: '/clips/:id', name: 'ClipDetail', component: ClipDetailView },
   { path: '/sessions', name: 'Sessions', component: SessionsView },
+  { path: '/weather', name: 'Weather', component: WeatherView },
   // 空氣盒子（MAPS）：清單併入設備狀況
   { path: '/devices/:id', name: 'DeviceDetail', component: DeviceDetailView },
   { path: '/history', name: 'History', component: HistoryView },

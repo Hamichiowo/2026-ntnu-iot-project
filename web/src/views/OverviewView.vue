@@ -73,6 +73,7 @@
                 <select v-if="counties.length" v-model="county" class="weather-select" aria-label="戶外天氣縣市">
                   <option v-for="name in counties" :key="name" :value="name">{{ name }}</option>
                 </select>
+                <router-link to="/weather" class="weather-detail">詳細</router-link>
               </div>
               <div role="status" aria-live="polite" class="alert-slot">
                 <div v-if="alerts.length" class="alert">
@@ -179,6 +180,7 @@
               <select v-if="counties.length" v-model="county" class="weather-select" aria-label="戶外天氣縣市">
                 <option v-for="name in counties" :key="name" :value="name">{{ name }}</option>
               </select>
+              <router-link to="/weather" class="weather-detail">詳細</router-link>
             </div>
           </div>
         </div>
@@ -471,6 +473,8 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .weather { display: flex; align-items: center; gap: 12px; color: var(--tx2); }
 .weather .ellipsis { flex: 1; min-width: 0; }
 .weather-select { max-width: 8rem; border: 1px solid var(--bd2); border-radius: 6px; background: var(--sf2); color: var(--tx); padding: 6px 8px; font: inherit; }
+.weather-detail { flex: 0 0 auto; color: var(--ac); font-size: 0.82rem; font-weight: 700; text-decoration: none; }
+.weather-detail:hover { text-decoration: underline; }
 .alert-slot { height: 92px; }
 .alert { height: 100%; display: flex; align-items: center; gap: 14px; padding: 0 20px; border-radius: 12px; line-height: 1.45; background: var(--wa-soft); border: 1px solid var(--wa-bd); }
 .alert svg { flex: 0 0 auto; }

@@ -3,14 +3,33 @@ import { onMounted, onUnmounted, ref, watch } from 'vue';
 export interface OutdoorWeather {
   county: string;
   observed_at: string;
+  weather: string | null;
   temp: number | null;
   hum: number | null;
+  rain_mm: number | null;
+  wind_speed: number | null;
+  wind_direction: number | null;
+  gust_speed: number | null;
+  pressure: number | null;
   stations: number;
+}
+
+export interface ForecastPeriod {
+  start: string;
+  end: string;
+  weather: string | null;
+  weather_code: number | null;
+  rain_probability: number | null;
+  min_temp: number | null;
+  max_temp: number | null;
+  comfort: string | null;
 }
 
 const counties = ref<string[]>([]);
 const county = ref('');
 const outdoor = ref<OutdoorWeather | null>(null);
+const forecast = ref<ForecastPeriod[]>([]);
+const forecastUpdatedAt = ref<number | null>(null);
 const loading = ref(false);
 const error = ref('');
 let consumers = 0;
@@ -33,8 +52,10 @@ async function loadOutdoor() {
   if (!county.value) return;
   loading.value = true;
   try {
-    const data = await request(`/api/v1/weather/outdoor?county=${encodeURIComponent(county.value)}`);
-    outdoor.value = data.data;
+    const data = await request(`/api/v1/weather/detail?county=${encodeURIComponent(county.value)}`);
+    outdoor.value = data.data.current;
+    forecast.value = data.data.forecast;
+    forecastUpdatedAt.value = data.data.forecast_updated_at;
     error.value = '';
   } catch {
     error.value = '氣象署資料暫時無法取得';
@@ -79,5 +100,5 @@ export function useOutdoorWeather() {
       timer = undefined;
     }
   });
-  return { counties, county, outdoor, loading, error, refresh: loadOutdoor };
+  return { counties, county, outdoor, forecast, forecastUpdatedAt, loading, error, refresh: loadOutdoor };
 }

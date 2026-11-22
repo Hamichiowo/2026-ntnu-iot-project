@@ -42,6 +42,7 @@ const items = [
   { to: '/', label: '總覽', match: (p: string) => p === '/' || p === '/start' },
   { to: '/devices', label: '設備狀況', match: (p: string) => p.startsWith('/devices') || p.startsWith('/clips/') },
   { to: '/sessions', label: '晾衣紀錄', match: (p: string) => p === '/sessions' },
+  { to: '/weather', label: '戶外天氣', match: (p: string) => p === '/weather' },
   { to: '/history', label: '空氣歷史', match: (p: string) => p === '/history' },
 ];
 </script>
