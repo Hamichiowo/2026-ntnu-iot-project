@@ -6,6 +6,7 @@ import {
 import { mqttSubscriber } from '../mqtt/subscriber';
 import { dryingRoute } from './drying';
 import { firmwareRoute } from './firmware';
+import { clipDividers, countToOhm, dividerAt, type Divider } from '../clothes/resistance';
 
 export { CLIP_STALE_MS };
 export const clothesRoute = new Hono();
@@ -80,7 +81,13 @@ clothesRoute.get('/export', async (c) => {
   }
   const airboxId = await chosenAirbox(c.req.query('airbox'), c.req.query('clip'));
   if (airboxId === undefined) return c.json(BAD_AIRBOX, 400);
-  const pages = clothesExportRows(start, end, 5000, airboxId, await optional(() => clipOf(c.req.query('clip'))));
+  const clipId = await optional(() => clipOf(c.req.query('clip')));
+  const pages = clothesExportRows(start, end, 5000, airboxId, clipId);
+  const dividers: Divider[] = clipId ? await optional(() => clipDividers(clipId)) ?? [] : [];
+  const line = (row: CsvRow) => {
+    const divider = dividerAt(dividers, new Date(row.timestamp).getTime());
+    return clothesCsvLine({ ...row, ads1115_ohm: divider ? countToOhm(row.ads1115_raw, divider) : null });
+  };
   let first: IteratorResult<CsvRow[], void>;
   try { first = await pages.next(); } catch {
     return c.json({ success: false, error: '資料庫無法讀取，暫時無法匯出' }, 503);
@@ -90,13 +97,13 @@ clothesRoute.get('/export', async (c) => {
     async start(controller) {
       // BOM so Excel opens the UTF-8 file correctly.
       controller.enqueue(encoder.encode('\uFEFF' + CSV_HEADER));
-      if (first.value) controller.enqueue(encoder.encode(first.value.map(clothesCsvLine).join('')));
+      if (first.value) controller.enqueue(encoder.encode(first.value.map(line).join('')));
     },
     async pull(controller) {
       try {
         const page = await pages.next();
         if (page.done) return controller.close();
-        if (page.value.length) controller.enqueue(encoder.encode(page.value.map(clothesCsvLine).join('')));
+        if (page.value.length) controller.enqueue(encoder.encode(page.value.map(line).join('')));
       } catch (err) { controller.error(err); }
     },
     async cancel() { await pages.return(undefined); },
@@ -109,8 +116,8 @@ clothesRoute.get('/export', async (c) => {
   } });
 });
 
-// Two days, so a drying record and the margin around it fit in one chart (the time editor).
-export const HISTORY_MAX_HOURS = 48;
+// One week: the clip detail page's longest view (the drying record editor asks for at most two days).
+export const HISTORY_MAX_HOURS = 7 * 24;
 clothesRoute.get('/history', async (c) => {
   const now = new Date();
   const startText = c.req.query('start');

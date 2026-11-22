@@ -116,9 +116,11 @@ export function historyBucketSeconds(start: Date, end: Date, limit: number) {
   return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 1000 / limit));
 }
 
-export const CSV_HEADER = 'time_taipei,timestamp_utc,hx711_raw,ads1115_raw,touch_raw,air_temp_c,air_humi_pct\n';
+// ads1115_ohm: fabric resistance from the clip's divider setting at that time; empty when the clip
+// had no setting yet or the fabric was beyond what the divider resolves (open).
+export const CSV_HEADER = 'time_taipei,timestamp_utc,hx711_raw,ads1115_raw,ads1115_ohm,touch_raw,air_temp_c,air_humi_pct\n';
 export type CsvRow = { id: string; timestamp: Date | string; hx711_raw: number | null; ads1115_raw: number | null; touch_raw: number | null;
-  air_temp?: number | null; air_humi?: number | null };
+  air_temp?: number | null; air_humi?: number | null; ads1115_ohm?: number | null };
 const TAIPEI_MS = 8 * 60 * 60000;
 const csvValue = (value: number | null | undefined) => value == null ? '' : String(value);
 
@@ -126,7 +128,8 @@ const csvValue = (value: number | null | undefined) => value == null ? '' : Stri
 export function clothesCsvLine(row: CsvRow) {
   const time = new Date(row.timestamp);
   const taipei = new Date(time.getTime() + TAIPEI_MS).toISOString().replace('T', ' ').slice(0, 23);
-  return `${taipei},${time.toISOString()},${csvValue(row.hx711_raw)},${csvValue(row.ads1115_raw)},${csvValue(row.touch_raw)},` +
+  return `${taipei},${time.toISOString()},${csvValue(row.hx711_raw)},${csvValue(row.ads1115_raw)},` +
+    `${row.ads1115_ohm == null || !Number.isFinite(row.ads1115_ohm) ? '' : Math.round(row.ads1115_ohm)},${csvValue(row.touch_raw)},` +
     `${csvValue(row.air_temp)},${csvValue(row.air_humi)}\n`;
 }
 
