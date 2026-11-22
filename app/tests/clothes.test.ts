@@ -74,8 +74,10 @@ describe('Clothes MQTT contract', () => {
   it('bounds and validates history queries before hitting the database', async () => {
     const app = new Hono().route('/clothes', clothesRoute);
     for (const query of ['limit=0', 'limit=5001', 'limit=2x', 'start=bad',
-      'start=2026-01-03&end=2026-01-01', 'start=2026-01-01&end=2026-01-03']) {
+      'start=2026-01-03&end=2026-01-01', 'start=2026-01-01T00:00:00Z&end=2026-01-03T00:00:01Z']) {
       expect((await app.request(`/clothes/history?${query}`)).status).toBe(400);
     }
+    // Two days is the longest range (the record time editor needs it).
+    expect((await app.request('/clothes/history?start=2026-01-01T00:00:00Z&end=2026-01-03T00:00:00Z')).status).toBe(503);
   });
 });
