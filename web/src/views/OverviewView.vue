@@ -15,7 +15,7 @@
               <svg class="line" aria-hidden="true" width="100%" height="60" viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M0,15 Q50,30 100,15" fill="none" :stroke="palette.tx2" stroke-width="2.5" vector-effect="non-scaling-stroke" /></svg>
               <div class="track" :style="{ transform: `translateX(-${idx * 100}%)` }">
                 <div v-for="(item, i) in items" :key="item.session.id" class="slide" :aria-hidden="i !== idx">
-                  <GarmentFigure :uid="item.session.id" :garment="i === idx && previewGarment ? previewGarment : item.garment"
+                  <GarmentFigure :uid="item.session.id" :garment="item.garment"
                     :moist="item.moist" :label="item.moist == null ? item.garment.name : `${item.garment.name}，剩餘水分 ${item.moist}%`" />
                 </div>
               </div>
@@ -34,10 +34,10 @@
             <!-- view -->
             <div v-if="panel === 'view'" class="view">
               <div class="view-top">
-                <span class="meta"><i :style="{ background: cur.garment.color }"></i><DemoTag v-if="cur.session.demo" /><span class="ellipsis">{{ cur.garment.material }} · {{ SHAPES[cur.garment.style].label }} · {{ cur.clip.name }}</span></span>
+                <span class="meta"><i :style="{ background: cur.garment.color }"></i><DemoTag v-if="cur.session.demo" /><span class="ellipsis">{{ cur.garment.material }} · {{ SHAPES[cur.garment.style].label }} · <router-link :to="`/clips/${cur.clip.id}`" class="clip-link" title="衣夾詳細">{{ cur.clip.name }}</router-link></span></span>
                 <div class="btns">
-                  <router-link :to="`/clips/${cur.clip.id}`" class="ui-btn">衣夾詳細</router-link>
-                  <button type="button" class="ui-btn" @click="startEdit">編輯衣物</button>
+                  <button type="button" class="ui-btn" @click="panel = 'swap'">更換衣物</button>
+                  <button type="button" class="ui-btn" @click="editGarment">編輯衣物</button>
                   <button type="button" class="ui-btn ui-btn--primary" @click="panel = 'end'">結束晾衣</button>
                 </div>
               </div>
@@ -90,37 +90,6 @@
               </div>
             </div>
 
-            <!-- edit -->
-            <div v-else-if="panel === 'edit' && draft" class="card-panel">
-              <div class="card-head">
-                <h2>{{ isNewGarment ? '新增衣物' : '編輯衣物' }}</h2>
-                <button type="button" class="ui-btn" @click="panel = 'swap'">更換衣物</button>
-              </div>
-              <GarmentForm v-model="draft" id-prefix="ov-garment" placeholder="例如：白色班服" />
-              <p class="edit-note wa-tx">{{ draftTaken ? `已經有名為「${draft.name.trim()}」的衣物，請換一個名稱` : predictChanged ? '樣式或材質變更後，會重新計算這次的乾燥預測' : '' }}</p>
-              <div class="btns">
-                <button type="button" class="ui-btn ui-btn--primary ui-btn--lg" :disabled="!dirty || !draft.name.trim() || draftTaken" @click="save">儲存</button>
-                <button type="button" class="ui-btn ui-btn--lg" :disabled="!dirty" @click="revert">復原</button>
-                <button type="button" class="ui-btn ui-btn--ghost push" @click="closePanel">取消</button>
-              </div>
-            </div>
-
-            <!-- confirm -->
-            <div v-else-if="panel === 'confirm' && draft" class="card-panel warn" role="alertdialog" aria-labelledby="confirm-title">
-              <h2 id="confirm-title">之前的紀錄也會一起更改</h2>
-              <p>「{{ cur.garment.name }}」已有 <strong>{{ dryCount(cur.garment.id) }} 次</strong>晾衣紀錄。儲存後，這些紀錄裡的衣物設定都會改成新的；每次的實際乾燥時間不會改變。</p>
-              <div class="changes">
-                <div v-for="ch in changes" :key="ch.label" class="change">
-                  <span class="muted">{{ ch.label }}</span><span class="from">{{ ch.from }}</span><span aria-hidden="true" class="muted">→</span><strong>{{ ch.to }}</strong>
-                </div>
-              </div>
-              <p class="edit-note wa-tx">{{ predictChanged ? '樣式或材質變更後，會重新計算這次的乾燥預測' : '' }}</p>
-              <div class="btns">
-                <button type="button" class="ui-btn ui-btn--primary ui-btn--lg" @click="commit">確定儲存</button>
-                <button type="button" class="ui-btn ui-btn--lg" @click="panel = 'edit'">返回編輯</button>
-              </div>
-            </div>
-
             <!-- swap -->
             <div v-else-if="panel === 'swap'" class="card-panel">
               <h2>更換衣物</h2>
@@ -136,7 +105,7 @@
               </div>
               <div class="btns">
                 <button type="button" class="ui-btn ui-btn--lg ui-btn--dashed" @click="addNew">＋ 新增衣物</button>
-                <button type="button" class="ui-btn ui-btn--ghost push" @click="startEdit">返回</button>
+                <button type="button" class="ui-btn ui-btn--ghost push" @click="closePanel">返回</button>
               </div>
             </div>
 
@@ -242,15 +211,15 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import GarmentFigure from '../components/clothes/GarmentFigure.vue';
-import GarmentForm from '../components/clothes/GarmentForm.vue';
 import DryingCurve from '../components/clothes/DryingCurve.vue';
 import DemoTag from '../components/clothes/DemoTag.vue';
 import AirboxSelect from '../components/clothes/AirboxSelect.vue';
-import { BASE_MINUTES, SHAPES, colorName, type Material } from '../constants/garments';
+import { BASE_MINUTES, SHAPES, type Material } from '../constants/garments';
 import { useTheme } from '../composables/useTheme';
 import { useClothesLive } from '../composables/useClothesData';
-import { dryAt, moistureAt, useClothesMock, type GarmentDraft } from '../composables/useClothesMock';
+import { dryAt, moistureAt, useClothesMock } from '../composables/useClothesMock';
 import { useOutdoorWeather } from '../composables/useOutdoorWeather';
 import { DAY_MS, TAIPEI_MS, clock, dayLabel, formatAir, minutesText, shortDuration } from '../utils/format';
 
@@ -294,56 +263,21 @@ onMounted(() => {
   }
 });
 
-type Panel = 'view' | 'edit' | 'confirm' | 'swap' | 'end';
+type Panel = 'view' | 'swap' | 'end';
 const panel = ref<Panel>('view');
-const draft = ref<GarmentDraft | null>(null);
-const isNewGarment = ref(false);
 function go(i: number) {
   // Stops at the first and last garment instead of wrapping around.
   idx.value = Math.max(0, Math.min(items.value.length - 1, i));
   closePanel();
 }
-function closePanel() { panel.value = 'view'; draft.value = null; isNewGarment.value = false; }
+function closePanel() { panel.value = 'view'; }
 const scrollTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 
-const fromGarment = (g: GarmentDraft): GarmentDraft => ({ name: g.name, style: g.style, color: g.color, material: g.material });
-function startEdit() {
-  if (!cur.value) return;
-  draft.value = fromGarment(cur.value.garment);
-  panel.value = 'edit';
+// Garment style, colour and material are edited on the garment page (衣物管理).
+const router = useRouter();
+function editGarment() {
+  if (cur.value) void router.push(`/garments/${cur.value.garment.id}`);
 }
-const previewGarment = computed(() => (panel.value === 'edit' || panel.value === 'confirm') && draft.value ? draft.value : null);
-const dirty = computed(() => !!(draft.value && cur.value &&
-  (['name', 'style', 'color', 'material'] as const).some((k) => draft.value![k] !== cur.value!.garment[k])));
-// Another garment of the same kind (real or demo) already has this name.
-const draftTaken = computed(() => !!(draft.value && cur.value &&
-  mock.garmentNameTaken(draft.value.name, cur.value.session.demo, cur.value.garment.id)));
-const predictChanged = computed(() => !!(draft.value && cur.value &&
-  (draft.value.style !== cur.value.garment.style || draft.value.material !== cur.value.garment.material)));
-const changes = computed(() => {
-  const d = draft.value, g = cur.value?.garment;
-  if (!d || !g) return [];
-  const out: { label: string; from: string; to: string }[] = [];
-  if (d.name !== g.name) out.push({ label: '名稱', from: g.name, to: d.name });
-  if (d.style !== g.style) out.push({ label: '樣式', from: SHAPES[g.style].label, to: SHAPES[d.style].label });
-  if (d.color !== g.color) out.push({ label: '顏色', from: colorName(g.color), to: colorName(d.color) });
-  if (d.material !== g.material) out.push({ label: '材質', from: g.material, to: d.material });
-  return out;
-});
-function save() {
-  if (!dirty.value || !cur.value) return;
-  if (dryCount(cur.value.garment.id) > 0) panel.value = 'confirm'; else commit();
-}
-// Writes go to the server; the panel only closes once they worked (otherwise the error shows).
-async function commit() {
-  if (!draft.value || !cur.value) return;
-  const reprice = predictChanged.value;
-  const { session, garment } = cur.value;
-  if (!await mock.updateGarment(garment.id, { ...draft.value, name: draft.value.name.trim() || garment.name })) return;
-  if (reprice && !await mock.swapGarment(session.id, garment.id)) return;  // re-predict with the new material/style
-  closePanel();
-}
-function revert() { if (cur.value) draft.value = fromGarment(cur.value.garment); }
 // Only garments of the same kind (real or demo) as this session can be swapped in.
 const swapChoices = computed(() => cur.value ? mock.state.garments.filter((g) => g.demo === cur.value!.session.demo) : []);
 async function swapTo(garmentId: string) {
@@ -359,9 +293,7 @@ async function addNew() {
   for (let n = 2; mock.garmentNameTaken(name, session.demo); n++) name = `新衣物 ${n}`;
   const g = await mock.addGarment({ name, style: 'tee', color: '#F2F1EC', material: '棉' }, session.demo);
   if (!g || !await mock.swapGarment(session.id, g.id)) return;
-  draft.value = fromGarment(g);
-  isNewGarment.value = true;
-  panel.value = 'edit';
+  void router.push(`/garments/${g.id}`);  // set its name and style there
 }
 async function finish(how: 'dry' | 'early' | 'cancel') {
   if (!cur.value) return;
@@ -458,6 +390,8 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btns { display: flex; flex-wrap: wrap; gap: 8px 10px; }
 .push { margin-left: auto; }
+.clip-link { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.clip-link:hover { color: var(--tx); }
 .name { font-size: 3rem; font-weight: 900; line-height: 1.15; }
 .label { display: block; font-size: 0.9375rem; color: var(--mu); }
 .view > div > .label { font-size: 1.0625rem; }
@@ -490,13 +424,6 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 
 .card-panel { display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 20px; border: 1px solid var(--bd); background: var(--bg); }
 .card-panel h2 { font-size: 1.5rem; }
-.card-panel.warn { border-color: var(--wa-bd); background: var(--wa-card); }
-.card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-.edit-note { min-height: 24px; font-size: 0.9375rem; }
-.changes { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 12px; background: var(--sf); }
-.change { display: flex; flex-wrap: wrap; gap: 6px 12px; }
-.change .muted:first-child { min-width: 48px; }
-.from { color: var(--tx2); text-decoration: line-through; }
 .muted-2 { color: var(--tx2); }
 .library { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; }
 .lib-item { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; min-height: 60px; padding: 8px 16px; border-radius: 12px; border: 1px solid var(--bd); background: var(--sf); text-align: left; cursor: pointer; }
