@@ -16,15 +16,16 @@ export interface Garment {
   demo: boolean; dryCount: number; sessionCount: number; busy: boolean;
 }
 export type GarmentDraft = Pick<Garment, 'name' | 'style' | 'color' | 'material'>;
-export interface Session { id: string; clipId: string; garmentId: string; startedAt: number; totalMin: number; demo: boolean }
+// seed: demo sessions only, the seed of their simulated sensor curves (utils/demoSensor.ts).
+export interface Session { id: string; clipId: string; garmentId: string; startedAt: number; totalMin: number; demo: boolean; seed: number | null }
 export interface DryRecord {
   id: string; clipId: string; garmentId: string; startedAt: number; endedAt: number;
-  actualMin: number | null; predictedMin: number; outcome: 'dry' | 'early'; demo: boolean;
+  actualMin: number | null; predictedMin: number; outcome: 'dry' | 'early'; demo: boolean; seed: number | null;
 }
 // One session from GET /sessions/:id: drying (endedAt null) or ended.
 export interface SessionDetail {
   id: string; clipId: string; garmentId: string; startedAt: number; endedAt: number | null; predictedMin: number;
-  actualMin: number | null; outcome: 'dry' | 'early' | null; demo: boolean;
+  actualMin: number | null; outcome: 'dry' | 'early' | null; demo: boolean; seed: number | null;
   garment: { id: string; name: string; style: StyleKey; color: string; material: Material };
 }
 export interface RecordPatch { garment_id?: string; started_at?: string; ended_at?: string }
@@ -78,15 +79,15 @@ const toGarment = (g: any): Garment => ({
   sessionCount: g.session_count ?? 0, busy: !!g.busy,
 });
 const toSession = (s: any): Session => ({
-  id: s.id, clipId: s.clip_id, garmentId: s.garment_id, startedAt: ms(s.started_at), totalMin: s.predicted_min, demo: s.is_demo,
+  id: s.id, clipId: s.clip_id, garmentId: s.garment_id, startedAt: ms(s.started_at), totalMin: s.predicted_min, demo: s.is_demo, seed: s.demo_seed ?? null,
 });
 const toRecord = (s: any): DryRecord => ({
   id: s.id, clipId: s.clip_id, garmentId: s.garment_id, startedAt: ms(s.started_at), endedAt: ms(s.ended_at),
-  actualMin: s.actual_min, predictedMin: s.predicted_min, outcome: s.outcome, demo: s.is_demo,
+  actualMin: s.actual_min, predictedMin: s.predicted_min, outcome: s.outcome, demo: s.is_demo, seed: s.demo_seed ?? null,
 });
 const toDetail = (s: any): SessionDetail => ({
   id: s.id, clipId: s.clip_id, garmentId: s.garment_id, startedAt: ms(s.started_at), endedAt: s.ended_at ? ms(s.ended_at) : null,
-  predictedMin: s.predicted_min, actualMin: s.actual_min, outcome: s.outcome, demo: s.is_demo, garment: s.garment,
+  predictedMin: s.predicted_min, actualMin: s.actual_min, outcome: s.outcome, demo: s.is_demo, seed: s.demo_seed ?? null, garment: s.garment,
 });
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -135,8 +136,9 @@ export const dryingApi = {
     return toDetail(data.session);
   },
   deleteRecord: (id: string) => write(`/sessions/${encodeURIComponent(id)}`, 'DELETE'),
-  async startSession(clipId: string, garment: { id: string } | GarmentDraft) {
-    const body = 'id' in garment ? { clip_id: clipId, garment_id: garment.id } : { clip_id: clipId, garment };
+  // demo (demo clips only): curve seed, and how many minutes ago the garment was hung up.
+  async startSession(clipId: string, garment: { id: string } | GarmentDraft, demo?: { seed: number; elapsed_min: number }) {
+    const body = { ...('id' in garment ? { clip_id: clipId, garment_id: garment.id } : { clip_id: clipId, garment }), ...(demo ? { demo } : {}) };
     const data = await write<{ session: unknown }>('/sessions', 'POST', body);
     return toSession(data.session);
   },

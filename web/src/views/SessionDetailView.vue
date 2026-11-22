@@ -37,7 +37,7 @@
             <h2>感測曲線</h2>
             <span class="muted small">{{ formatTime(chartRange.start) }} – {{ formatTime(chartRange.end) }}</span>
           </div>
-          <p v-if="detail.demo" class="ui-note ui-note--info">這是示範紀錄，沒有連接實體感測器，所以沒有感測資料。</p>
+          <p v-if="detail.demo" class="ui-note ui-note--info">這是示範紀錄，沒有實體感測器；曲線是依五次真實晾衣實驗模擬的。</p>
           <template v-else>
             <p v-if="clipped" class="ui-note">這筆紀錄超過 48 小時，曲線只顯示開始後的 48 小時；CSV 匯出整段。</p>
             <p v-if="historyError" class="ui-note ui-note--error" role="alert">{{ historyError }}</p>
@@ -46,11 +46,12 @@
           </template>
         </section>
 
-        <div v-if="!detail.demo && !history?.records.length" class="panel empty">
+        <div v-if="!history?.records.length" class="panel empty">
           <strong>{{ historyLoading ? '正在讀取感測資料…' : '這段時間沒有感測資料' }}</strong>
         </div>
-        <RawCharts v-else-if="history && !detail.demo" :records="history.records" :air-records="history.air" :range="chartRange"
-          :stale-after-ms="history.staleAfterMs" :bucket-seconds="history.bucketSeconds" :air-device-id="history.airDeviceId" :dividers="clip?.dividers" />
+        <RawCharts v-else-if="history" :records="history.records" :air-records="history.air" :range="chartRange"
+          :stale-after-ms="history.staleAfterMs" :bucket-seconds="history.bucketSeconds" :air-device-id="history.airDeviceId"
+          :dividers="detail.demo ? demoDividers(detail.clipId) : clip?.dividers" />
       </div>
 
       <aside class="side-col">
@@ -88,6 +89,7 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import DemoTag from '../components/clothes/DemoTag.vue';
 import RawCharts from '../components/clothes/RawCharts.vue';
+import { demoDividers, demoHistory } from '../utils/demoSensor';
 import { SHAPES } from '../constants/garments';
 import { HISTORY_MAX_MS, downloadRawCsv, fetchRawHistory, type RawHistory } from '../composables/useClothesData';
 import { useClothesMock, type SessionDetail } from '../composables/useClothesMock';
@@ -131,9 +133,15 @@ const chartRange = computed(() => {
   const start = detail.value?.startedAt ?? Date.now();
   return { start: new Date(start), end: new Date(Math.max(start + 1000, Math.min(fullEnd.value, start + HISTORY_MAX_MS))) };
 });
+// Demo records have no real readings: their curves come from the generator (utils/demoSensor.ts).
+function demoHistoryFor(clipId: string, start: Date, end: Date): RawHistory {
+  const sim = demoHistory(clipId, mock.demoSessionsOf(clipId), start.getTime(), end.getTime());
+  return { records: sim.records, air: [], airDeviceId: null, bucketSeconds: sim.bucketSeconds, staleAfterMs: 3 * 60000 };
+}
 let historyRequest = 0;
 async function loadHistory() {
-  if (!detail.value || detail.value.demo) { history.value = null; return; }
+  if (!detail.value) { history.value = null; return; }
+  if (detail.value.demo) { history.value = demoHistoryFor(detail.value.clipId, chartRange.value.start, chartRange.value.end); return; }
   const request = ++historyRequest;
   historyLoading.value = true;
   try {
@@ -156,6 +164,7 @@ const exportMessage = ref('');
 const exportFailed = ref(false);
 async function exportCsv() {
   if (!detail.value) return;
+  if (detail.value.demo) { exportFailed.value = true; exportMessage.value = '示範紀錄沒有真的原始資料，所以不提供匯出。'; return; }
   exporting.value = true; exportMessage.value = '';
   try {
     const { name, rows } = await downloadRawCsv(new Date(detail.value.startedAt), new Date(fullEnd.value), detail.value.clipId);

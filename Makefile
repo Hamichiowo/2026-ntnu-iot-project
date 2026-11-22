@@ -66,7 +66,7 @@ typecheck: ## 前端型別檢查（vue-tsc 2.2 + TypeScript 5.8）
 sim: ## 送模擬衣夾資料（預設 60 筆，可用 make sim SIM_COUNT=10），需先啟動服務
 	$(COMPOSE) exec -T -e SIM_COUNT=$(SIM_COUNT) app bun scripts/publish-clothes.ts
 
-seed: ## 寫入示範資料（衣夾-02～08、衣物、晾衣紀錄，is_demo = true）；已經有就略過，需先啟動服務
+seed: ## 寫入示範資料（衣夾-02～06、衣物、晾衣紀錄，is_demo = true）；已經有就略過，需先啟動服務
 	$(COMPOSE) exec -T app bun scripts/seed-demo.ts
 
 smoke: ## 整合測試 MQTT → DB → API（需先啟動服務並建立 tools/config.json，會寫入測試資料）

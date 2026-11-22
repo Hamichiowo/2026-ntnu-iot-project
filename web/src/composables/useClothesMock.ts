@@ -1,6 +1,6 @@
 // What the clothes pages read: clips, garments, sessions and records from the server
 // (useDrying.ts), plus the parts of the demo that are not records and so stay in the front end:
-// how the demo clips 衣夾-02～08 look (chip, IP, signal, faults), the demo weather, the demo
+// how the demo clips 衣夾-02～06 look (chip, IP, signal, faults), the demo weather, the demo
 // moisture curve and the demo error per sensing method.
 //
 // Real or demo is decided per clip: 衣夾-01 is the real clip; the demo clips, garments, sessions
@@ -13,6 +13,7 @@ import { clothesLiveState, type Field } from './useClothesData';
 import { dryAtOf, dryingApi, dryingState, useDrying, type ClipReading, type Garment, type GarmentDraft, type RecordPatch, type Session } from './useDrying';
 import { loadSettings, saveSettings, useSettings } from './useSettings';
 import type { Divider } from '../utils/resistance';
+import { demoLatest, demoMoisture, type DemoSession } from '../utils/demoSensor';
 
 export type { DryRecord, Garment, GarmentDraft, RecordPatch, Session, SessionDetail } from './useDrying';
 export type Method = Field;
@@ -32,20 +33,17 @@ type ClipLook = Omit<ClipDevice, 'id' | 'name' | 'live' | 'demo' | 'deviceId' | 
 // Clip ids are UUIDs, so the demo looks are found by the demo clip's name.
 const REAL_LOOK: ClipLook = { topic: '—', chip: 'ESP32-S3', ip: null, fw: null, signal: '良好', bootMinAgo: 0, offlineMinAgo: null, issue: null, lastBox: '' };
 const DEMO_LOOK: Record<string, ClipLook> = {
-  '衣夾-02': { topic: 'clothes/02/raw', chip: 'ESP32-S3', ip: '192.168.0.43', fw: '0.3.1', signal: '偏弱', bootMinAgo: 47, offlineMinAgo: null, issue: '重量感測連續 12 筆讀取失敗，請檢查秤重感測器排線', lastBox: '' },
+  '衣夾-02': { topic: 'clothes/02/raw', chip: 'ESP32-S3', ip: '192.168.0.43', fw: '0.5.0', signal: '偏弱', bootMinAgo: 47, offlineMinAgo: null, issue: null, lastBox: '' },
   '衣夾-03': { topic: 'clothes/03/raw', chip: 'ESP32-S3', ip: '192.168.0.44', fw: '0.3.1', signal: '良好', bootMinAgo: 130, offlineMinAgo: null, issue: null, lastBox: '' },
   '衣夾-04': { topic: 'clothes/04/raw', chip: 'ESP32-S3', ip: '192.168.0.45', fw: '0.3.1', signal: '良好', bootMinAgo: 150, offlineMinAgo: null, issue: null, lastBox: '' },
   '衣夾-05': { topic: 'clothes/05/raw', chip: 'ESP32-S3', ip: '192.168.0.46', fw: '0.3.0', signal: '良好', bootMinAgo: 95, offlineMinAgo: null, issue: null, lastBox: '' },
   '衣夾-06': { topic: 'clothes/06/raw', chip: 'ESP32-S3', ip: '192.168.0.47', fw: '0.3.1', signal: '良好', bootMinAgo: 1440, offlineMinAgo: null, issue: null, lastBox: '陽台' },
-  '衣夾-07': { topic: 'clothes/07/raw', chip: 'ESP32-S3', ip: '192.168.0.48', fw: '0.3.1', signal: '偏弱', bootMinAgo: 380, offlineMinAgo: null, issue: null, lastBox: '浴室' },
-  '衣夾-08': { topic: 'clothes/08/raw', chip: 'ESP32-S3', ip: null, fw: '0.2.4', signal: '偏弱', bootMinAgo: 0, offlineMinAgo: 2 * 1440 + 90, issue: null, lastBox: '陽台' },
 };
 const PLAIN_DEMO_LOOK: ClipLook = { ...REAL_LOOK, topic: '—' };
 
 // Demo prediction error per sensing method (minutes).
 export const METHOD_ERROR: Record<Method, number> = { hx711_raw: 18, ads1115_raw: 31, touch_raw: 47 };
 
-const DRYNESS_EXP = 1.25;
 export const DRY_THRESHOLD = 5;  // % remaining moisture counted as dry
 
 // ---------------------------------------------------------------- settings
@@ -62,13 +60,12 @@ setInterval(() => { now.value = Date.now(); }, 15000);
 const loadedAt = Date.now();
 
 // ---------------------------------------------------------------- derived helpers
-// Demo moisture only (the real clip has no moisture estimate yet):
-// remaining moisture reaches DRY_THRESHOLD exactly at startedAt + totalMin.
-const DRY_K = 1 - (DRY_THRESHOLD / 100) ** (1 / DRYNESS_EXP);
+// Demo moisture only (the real clip has no moisture estimate yet): the water left in the simulated
+// weight curve of the session (utils/demoSensor.ts), which reaches DRY_THRESHOLD at startedAt + totalMin.
 export function moistureAt(session: Session, at: number) {
-  const p = Math.max(0, (at - session.startedAt) / (session.totalMin * MIN));
-  return Math.round(100 * Math.max(0, 1 - p * DRY_K) ** DRYNESS_EXP);
+  return Math.round(demoMoisture(session, at));
 }
+export const moistureCurve = (session: Session) => (at: number) => demoMoisture(session, at);
 export const dryAt = dryAtOf;
 
 const { clips, garments, sessions, records, garmentMap } = dryingState;
@@ -112,7 +109,8 @@ function clipStatus(d: ClipDevice): ClipStatus {
     return { online, tone: !online ? 'off' : issue ? 'warn' : 'on', label: !online ? (latest ? '資料中斷' : '離線') : issue ? '感測異常' : '在線', lastSeenMs, uptimeMin: null, latest };
   }
   if (d.offlineMinAgo != null) return { online: false, tone: 'off', label: '離線', lastSeenMs: d.offlineMinAgo * MIN, uptimeMin: null, latest: null };
-  return { online: true, tone: d.issue ? 'warn' : 'on', label: d.issue ? '感測異常' : '在線', latest: null,
+  // Demo clips "report" the simulated reading of the current minute.
+  return { online: true, tone: d.issue ? 'warn' : 'on', label: d.issue ? '感測異常' : '在線', latest: demoLatest(d.id, demoSessionsOf(d.id), now.value),
     lastSeenMs: (1 + (d.name.charCodeAt(d.name.length - 1) % 3)) * 1000, uptimeMin: d.bootMinAgo + Math.round((now.value - loadedAt) / MIN) };
 }
 
@@ -122,6 +120,14 @@ const devices = computed<ClipDevice[]>(() => clips.value.map((c) => ({
   id: c.id, name: c.name, live: !c.demo, demo: c.demo, deviceId: c.deviceId, online: c.online, latest: c.latest, dividers: c.dividers,
 })));
 const clipById = (id: string) => devices.value.find((d) => d.id === id);
+// All sessions of a demo clip (drying and ended), for its simulated readings.
+function demoSessionsOf(clipId: string): DemoSession[] {
+  return [
+    ...sessions.value.filter((s) => s.clipId === clipId && s.demo).map((s) => ({ id: s.id, startedAt: s.startedAt, totalMin: s.totalMin, seed: s.seed })),
+    ...records.value.filter((r) => r.clipId === clipId && r.demo)
+      .map((r) => ({ id: r.id, startedAt: r.startedAt, totalMin: r.predictedMin, endedAt: r.endedAt, seed: r.seed })),
+  ];
+}
 const methodOf = (clipId: string): Method => clips.value.find((c) => c.id === clipId)?.predictMethod ?? 'hx711_raw';
 
 // Same rule as the server: names repeat neither among real nor among demo garments
@@ -158,8 +164,8 @@ const deleteGarment = (id: string) => attempt(() => dryingApi.deleteGarment(id))
 const updateRecord = (id: string, patch: RecordPatch) => attempt(() => dryingApi.updateRecord(id, patch));
 const deleteRecord = (id: string) => attempt(() => dryingApi.deleteRecord(id));
 const swapGarment = (sessionId: string, garmentId: string) => attempt(() => dryingApi.swapGarment(sessionId, garmentId));
-async function startSession(clipId: string, garment: { id: string } | GarmentDraft) {
-  const session = await attempt(() => dryingApi.startSession(clipId, garment));
+async function startSession(clipId: string, garment: { id: string } | GarmentDraft, demo?: { seed: number; elapsed_min: number }) {
+  const session = await attempt(() => dryingApi.startSession(clipId, garment, demo));
   if (session) focus.value = session.id;
   return session;
 }
@@ -178,7 +184,7 @@ export function useClothesMock() {
   useDrying();
   return {
     state, now, weather, devices, activeClipIds, busyGarmentIds, demoEnabled, actionError, loaded: dryingState.loaded, loadError: dryingState.loadError,
-    garmentById, dryCount, predictMinutes, clipStatus, clipById, methodOf, garmentNameTaken,
+    garmentById, dryCount, predictMinutes, clipStatus, clipById, methodOf, garmentNameTaken, demoSessionsOf,
     updateGarment, addGarment, deleteGarment, updateRecord, deleteRecord, swapGarment, startSession, endSession, setMethod, removeDevice, addDivider, deleteDivider, clearFocus, reset, setDemoEnabled,
   };
 }

@@ -74,7 +74,7 @@ make logs        # 追蹤 app 日誌；make logs s=postgres
 make test        # 後端 bun test + 前端 build
 make typecheck   # 前端型別檢查（vue-tsc 2.2 + TypeScript 5.8）
 make sim         # 沒板子時送模擬衣夾資料（SIM_COUNT=10 可改筆數）
-make seed        # 寫入示範資料（衣夾-02～08、衣物、晾衣紀錄）；已經有就略過
+make seed        # 寫入示範資料（衣夾-02～06、衣物、晾衣紀錄）；已經有就略過
 make check       # MQTT 帳密是否正確、哪些裝置被拒絕
 make smoke       # 整合測試，需要 tools/config.json，會寫入測試資料
 ```
@@ -96,6 +96,7 @@ make smoke       # 整合測試，需要 tools/config.json，會寫入測試資�
 - **全站設定**：`composables/useSettings.ts`。localStorage `clothes-settings-cache` 只用來讓第一次畫面一致，伺服器回應後以伺服器為準。
 - **衣夾 id**：實際衣夾的 UUID 從 `/clips` 取得（`!is_demo` 而且有 `topic`），不要寫死。示範衣夾的外觀（`DEMO_LOOK`）用名稱對應。新增、編輯衣物時，同類已有同名會先在表單提示（`garmentNameTaken`）。
 - **衣夾、衣物、晾衣、紀錄**：`composables/useDrying.ts` 從 API 載入（示範開啟時帶 `?demo=include`），頁面開著時每 30 秒更新，每一筆都有 `demo`。寫入都送到伺服器，成功後重新載入；失敗時畫面不變並顯示錯誤（`actionError`）。localStorage 的 `clothes-demo-v1`、`clothes-local-v1` 已不再使用。
+- **示範感測資料**（`utils/demoSensor.ts`，範本在 `constants/dryingRuns.ts`）：示範衣夾的重量、電阻、電容讀值，和總覽的示範剩餘水分，都由同一個產生器算出。範本來自 11/14～11/20 五次真實晾衣（100 kΩ 分壓，電阻先換成歐姆再用 1 MΩ 公式換回讀值；約 3 MΩ 以上是依趨勢延伸）。每筆示範晾衣有 `drying_sessions.demo_seed`，同一個種子永遠畫出同一條曲線，新的晾衣用新的種子。開始晾衣選示範衣夾時可以設定「現在乾到幾 %」，前端用種子算出要往前推多久，送 `POST /sessions` 的 `demo: { seed, elapsed_min }`（只限示範衣夾）。示範資料不寫進 `clothes_raw`，也不提供匯出。
 - **`composables/useClothesMock.ts`**：頁面讀資料的入口（`state.garments/sessions/records` 等），底下是 `useDrying.ts`。只有「不是紀錄」的示範內容留在前端：示範衣夾的外觀（晶片、IP、訊號、故障）、示範天氣、示範剩餘水分曲線、各感測法的示範誤差。
 - **真假依衣夾分**：衣夾-01 只能晾真的衣物，示範衣夾只能晾示範衣物（開始晾衣、更換衣物都照這個過濾）。衣夾-01 的預計乾燥時間用伺服器的 `predicted_min`，剩餘水分還沒有，顯示 `NONE`；示範天氣的下雨提醒只套用在示範的晾衣。
 - **示範資料開關**：設定頁的「示範資料」（存在伺服器的 `demo_data`，所有瀏覽器一樣；伺服器存好才切換，失敗會顯示錯誤）。開啟時真的和示範的混在一起顯示並加標籤；關閉時只有真的。

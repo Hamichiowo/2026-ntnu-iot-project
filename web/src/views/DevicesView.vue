@@ -26,7 +26,7 @@
           <div><span>韌體版本</span><b class="mono">{{ c.version }}</b></div>
           <div v-if="c.device.live"><span>裝置編號</span><b class="mono">{{ c.device.deviceId ?? '尚未連線' }}</b></div>
           <template v-if="c.status.online">
-            <div v-if="c.device.live"><span>重量 / 電阻 / 電容</span><b class="mono raw">{{ rawLine(c.status.latest, c.device.dividers) }}</b></div>
+            <div v-if="c.device.live || c.status.latest"><span>重量 / 電阻 / 電容</span><b class="mono raw">{{ rawLine(c.status.latest, c.device.demo ? demoDividers(c.device.id) : c.device.dividers) }}</b></div>
             <template v-else>
               <div><span>訊號</span><b>{{ c.device.signal }}</b></div>
               <div><span>運行時間</span><b>{{ c.status.uptimeMin == null ? '—' : minutesText(c.status.uptimeMin) }}</b></div>
@@ -112,7 +112,7 @@
       </div>
     </section>
 
-    <p v-if="mock.demoEnabled.value" class="demo-note">標了「示範」的衣夾（衣夾-02～08）和連線事件是示範資料，狀態為模擬；衣夾-01 與空氣盒子為實際資料。可在設定關閉示範資料。</p>
+    <p v-if="mock.demoEnabled.value" class="demo-note">標了「示範」的衣夾（衣夾-02～06）和連線事件是示範資料，狀態為模擬；衣夾-01 與空氣盒子為實際資料。可在設定關閉示範資料。</p>
     <p v-else class="demo-note">示範資料已關閉，只顯示實際的衣夾與空氣盒子。</p>
     <FirmwareDialog ref="fwDialog" />
   </div>
@@ -127,6 +127,7 @@ import FirmwareDialog from '../components/clothes/FirmwareDialog.vue';
 import { FIRMWARE_PHASE, useFirmware } from '../composables/useFirmware';
 import type { ClipReading } from '../composables/useDrying';
 import { ohmText, type Divider } from '../utils/resistance';
+import { demoDividers } from '../utils/demoSensor';
 import { useWebSocket } from '../composables/useWebSocket';
 import { apiFetch } from '../composables/useAuth';
 import { agoText, clock, dayLabel, formatAir, formatRaw, minutesText } from '../utils/format';
@@ -220,7 +221,6 @@ const events = computed(() => {
     { ago: 61, device: '衣夾-02', text: '重量感測讀取失敗', tone: 'wa-tx' },
     { ago: 107, device: '衣夾-02', text: '上線', tone: 'ac-tx' },
     { ago: 323, device: '衣夾-01', text: '斷線 14 秒後重新連線', tone: 'muted-2' },
-    { ago: 2 * 1440 + 90, device: '衣夾-08', text: '離線', tone: 'muted-2' },
   ];
   return list.map((e, i) => {
     const at = t - e.ago * MIN;
