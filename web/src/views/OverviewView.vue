@@ -73,6 +73,9 @@
                 <select v-if="counties.length" v-model="county" class="weather-select" aria-label="戶外天氣縣市">
                   <option v-for="name in counties" :key="name" :value="name">{{ name }}</option>
                 </select>
+                <select v-if="districts.length" v-model="district" class="weather-select" aria-label="戶外天氣行政區">
+                  <option v-for="name in districts" :key="name" :value="name">{{ name }}</option>
+                </select>
                 <router-link to="/weather" class="weather-detail">詳細</router-link>
               </div>
               <div role="status" aria-live="polite" class="alert-slot">
@@ -180,6 +183,9 @@
               <select v-if="counties.length" v-model="county" class="weather-select" aria-label="戶外天氣縣市">
                 <option v-for="name in counties" :key="name" :value="name">{{ name }}</option>
               </select>
+              <select v-if="districts.length" v-model="district" class="weather-select" aria-label="戶外天氣行政區">
+                <option v-for="name in districts" :key="name" :value="name">{{ name }}</option>
+              </select>
               <router-link to="/weather" class="weather-detail">詳細</router-link>
             </div>
           </div>
@@ -252,7 +258,7 @@ const { palette } = useTheme();
 const { air } = useClothesLive();
 const mock = useClothesMock();
 const { weather: demoWeather, busyGarmentIds, dryCount, garmentById, clipById } = mock;
-const { counties, county, outdoor, loading: weatherLoading, error: weatherError } = useOutdoorWeather();
+const { counties, county, districts, district, outdoor, loading: weatherLoading, error: weatherError } = useOutdoorWeather();
 const MIN = 60000;
 
 const items = computed(() => mock.state.sessions.flatMap((session) => {
@@ -398,7 +404,7 @@ const airNote = computed(() => {
 // Same layout either way: without the demo there is no prediction yet, so each row shows NONE.
 const weatherText = computed(() => {
   const value = outdoor.value;
-  if (value) return `戶外 ${value.temp == null ? '—' : `${value.temp}°C`} · ${value.hum == null ? '—' : `${Math.round(value.hum)}%RH`} · ${value.stations} 站中位數`;
+  if (value) return `戶外 ${value.temp == null ? '—' : `${value.temp}°C`} · ${value.hum == null ? '—' : `${Math.round(value.hum)}%RH`} · ${value.station_name}`;
   if (weatherLoading.value) return '正在取得氣象署戶外天氣';
   return weatherError.value || '戶外天氣無數據';
 });
@@ -470,7 +476,7 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .big { display: block; font-size: 2rem; font-weight: 700; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .big small { font-size: 1.125rem; color: var(--mu); }
 .air-note { margin-top: -16px; font-size: 0.875rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.weather { display: flex; align-items: center; gap: 12px; color: var(--tx2); }
+.weather { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--tx2); }
 .weather .ellipsis { flex: 1; min-width: 0; }
 .weather-select { max-width: 8rem; border: 1px solid var(--bd2); border-radius: 6px; background: var(--sf2); color: var(--tx); padding: 6px 8px; font: inherit; }
 .weather-detail { flex: 0 0 auto; color: var(--ac); font-size: 0.82rem; font-weight: 700; text-decoration: none; }

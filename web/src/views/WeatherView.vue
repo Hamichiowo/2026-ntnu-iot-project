@@ -17,14 +17,22 @@
       <div class="sky-content">
         <header class="weather-head">
           <div>
-            <p class="eyebrow">中央氣象署 · 縣市觀測與 36 小時預報</p>
+            <p class="eyebrow">中央氣象署 · 行政區觀測與 36 小時預報</p>
             <h1 id="weather-title">戶外天氣</h1>
           </div>
           <div class="weather-controls">
-            <label for="weather-county">縣市</label>
-            <select id="weather-county" v-model="county">
-              <option v-for="name in counties" :key="name" :value="name">{{ name }}</option>
-            </select>
+            <div class="weather-field">
+              <label for="weather-county">縣市</label>
+              <select id="weather-county" v-model="county">
+                <option v-for="name in counties" :key="name" :value="name">{{ name }}</option>
+              </select>
+            </div>
+            <div class="weather-field">
+              <label for="weather-district">行政區</label>
+              <select id="weather-district" v-model="district" :disabled="!districts.length">
+                <option v-for="name in districts" :key="name" :value="name">{{ name }}</option>
+              </select>
+            </div>
             <button class="refresh-btn" type="button" :disabled="loading" @click="refresh">
               <span :class="{ spinning: loading }" aria-hidden="true">↻</span>{{ loading ? '更新中' : '更新' }}
             </button>
@@ -39,7 +47,7 @@
             <div class="temperature">
               <strong>{{ display(outdoor?.temp) }}</strong><span>°C</span>
             </div>
-            <p class="comfort">{{ activePeriod?.comfort || '以縣市測站中位數呈現' }}</p>
+            <p class="comfort">{{ outdoor?.station_name ? `${outdoor.district} · ${outdoor.station_name}觀測站` : '正在選擇行政區觀測站' }}</p>
             <p class="observed">{{ observedText }}</p>
           </div>
 
@@ -113,7 +121,7 @@
 
     <footer class="weather-source">
       <span>資料來源：交通部中央氣象署 Open Data</span>
-      <span>{{ outdoor?.stations ?? 0 }} 個測站彙整 · 觀測每 10 分鐘快取 · 預報每 30 分鐘快取</span>
+      <span>單一觀測站原始值 · 觀測每 10 分鐘快取 · 縣市預報每 30 分鐘快取</span>
     </footer>
   </div>
 </template>
@@ -122,7 +130,7 @@
 import { computed } from 'vue';
 import { useOutdoorWeather, type ForecastPeriod } from '../composables/useOutdoorWeather';
 
-const { counties, county, outdoor, forecast, forecastUpdatedAt, loading, error, refresh } = useOutdoorWeather();
+const { counties, county, districts, district, outdoor, forecast, forecastUpdatedAt, loading, error, refresh } = useOutdoorWeather();
 
 const activePeriod = computed(() => forecast.value[0] ?? null);
 const rainProbability = computed(() => activePeriod.value?.rain_probability ?? 0);
@@ -221,9 +229,11 @@ function windStyle(index: number) {
 .weather-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
 .eyebrow { margin: 0 0 8px; color: var(--sky-accent); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; }
 .weather-head h1 { margin: 0; font-size: clamp(2.2rem, 5vw, 5rem); line-height: 0.95; letter-spacing: -0.05em; }
-.weather-controls { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid rgb(255 255 255 / 0.16); background: rgb(5 10 15 / 0.45); backdrop-filter: blur(12px); }
+.weather-controls { display: flex; align-items: end; gap: 10px; padding: 10px; border: 1px solid rgb(255 255 255 / 0.16); background: rgb(5 10 15 / 0.45); backdrop-filter: blur(12px); }
+.weather-field { display: grid; gap: 4px; }
 .weather-controls label { color: var(--sky-muted); font-size: 0.8rem; }
 .weather-controls select, .refresh-btn { min-height: 40px; border: 1px solid rgb(255 255 255 / 0.18); background: rgb(255 255 255 / 0.06); color: #fff; padding: 0 12px; font: inherit; }
+.weather-controls select:disabled { opacity: 0.55; }
 .weather-controls option { color: #111; }
 .refresh-btn { cursor: pointer; display: flex; align-items: center; gap: 7px; }
 .refresh-btn:disabled { cursor: wait; opacity: 0.65; }
