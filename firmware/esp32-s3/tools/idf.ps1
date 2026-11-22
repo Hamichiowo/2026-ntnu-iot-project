@@ -17,7 +17,7 @@ if (Test-Path -LiteralPath $stage) {
 if (!(Test-Path (Join-Path $sourceRoot 'main\app_config.h'))) {
     Copy-Item (Join-Path $sourceRoot 'main\app_config.example.h') (Join-Path $sourceRoot 'main\app_config.h')
 }
-foreach ($name in @('CMakeLists.txt', 'sdkconfig.defaults', 'dependencies.lock', 'sdkconfig')) {
+foreach ($name in @('CMakeLists.txt', 'sdkconfig.defaults', 'partitions.csv', 'dependencies.lock', 'sdkconfig')) {
     $item = Join-Path $sourceRoot $name
     if (Test-Path -LiteralPath $item) { Copy-Item -LiteralPath $item -Destination $stage -Force }
 }

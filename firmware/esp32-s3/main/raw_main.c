@@ -21,6 +21,7 @@
 #include "esp_netif_sntp.h"
 #include "esp_crt_bundle.h"
 #include "network_setup.h"
+#include "ota_update.h"
 #include "app_config.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -268,6 +269,7 @@ void app_main(void)
         output("%s spread=%ld%s\r\n", json, (long)spread, calm_left ? " touched" : "");
         if (!network_publish_wait(json, NET_WAIT_MS, PUBLISH_WAIT_MS))
             output("NET report not sent (Wi-Fi/MQTT unavailable)\r\n");
+        else ota_after_report(!by_timer && !by_button);  // may download an update and restart
 
         int64_t period = (calm_left ? APP_TOUCHED_PERIOD_MS : APP_REPORT_PERIOD_MS) * 1000LL;
         int64_t now = wall_us();

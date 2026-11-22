@@ -1,0 +1,9 @@
+# Two app slots for over-the-air updates (16 MB flash).
+# nvs, phy_init and the first app slot sit where the old single-app layout had them, so a board
+# moved to this table over USB keeps its saved Wi-Fi/MQTT settings.
+# Name,   Type, SubType, Offset,   Size
+nvs,      data, nvs,     0x9000,   0x6000
+phy_init, data, phy,     0xf000,   0x1000
+ota_0,    app,  ota_0,   0x10000,  0x300000
+ota_1,    app,  ota_1,   0x310000, 0x300000
+otadata,  data, ota,     0x610000, 0x2000

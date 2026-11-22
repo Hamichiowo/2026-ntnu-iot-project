@@ -5,10 +5,12 @@ import {
 } from '../clothes/store';
 import { mqttSubscriber } from '../mqtt/subscriber';
 import { dryingRoute } from './drying';
+import { firmwareRoute } from './firmware';
 
 export { CLIP_STALE_MS };
 export const clothesRoute = new Hono();
 clothesRoute.route('/', dryingRoute);
+clothesRoute.route('/firmware', firmwareRoute);
 
 // Air box data is a bonus next to the clip: if it is missing or unreadable, clip data still works.
 async function optional<T>(read: () => Promise<T>): Promise<T | null> {
