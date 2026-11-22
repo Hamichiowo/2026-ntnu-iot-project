@@ -48,7 +48,6 @@ export const DRY_THRESHOLD = 5;  // % remaining moisture counted as dry
 // ---------------------------------------------------------------- settings
 const { settings } = useSettings();
 const demoEnabled = computed(() => settings.demo_data);
-void loadSettings();
 // Stored on the server first; the page only switches once that worked. Throws on failure.
 async function setDemoEnabled(on: boolean) {
   if (on !== settings.demo_data) await saveSettings({ demo_data: on });
@@ -160,6 +159,7 @@ function clearFocus() { focus.value = null; }
 
 // Call from a page's setup: it also keeps the server data fresh while the page is open.
 export function useClothesMock() {
+  void loadSettings();
   useDrying();
   return {
     state, now, weather, devices, activeClipIds, busyGarmentIds, demoEnabled, actionError, loaded: dryingState.loaded, loadError: dryingState.loadError,
