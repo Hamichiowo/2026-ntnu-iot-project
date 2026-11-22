@@ -62,24 +62,8 @@
           </div>
 
           <template v-else>
-            <section v-for="s in orderedSensors" :key="s.key" class="panel sensor" :class="{ chosen: s.key === method }">
-              <div class="sensor-head">
-                <h2><i :style="{ background: palette[s.color] }"></i>{{ s.method }} <small class="muted">{{ s.hardware }}</small>
-                  <em v-if="s.key === method" class="chosen-tag">預測使用</em></h2>
-                <span class="reading num">{{ formatRaw(latest?.[s.key]) }}<small> 原始計數</small></span>
-              </div>
-              <p v-if="latest && latest[s.key] === null" class="wa-tx small">本筆讀取失敗</p>
-              <div class="chart" title="按住拖曳可選取時段"><Line :data="chartDatasets[s.key]" :options="chartOptions" :plugins="[selectPlugin]" /></div>
-              <span class="muted small">{{ s.key }} · {{ s.description }}</span>
-            </section>
-
-            <section v-if="airRecords.length" class="panel sensor">
-              <div class="sensor-head">
-                <h2><i :style="{ background: palette.temp }"></i>環境溫度 <i :style="{ background: palette.humi }"></i>環境濕度</h2>
-                <span class="muted small">空氣盒子 {{ air?.device_id }} · 約每分鐘一筆</span>
-              </div>
-              <div class="chart" title="按住拖曳可選取時段"><Line :data="envChartData" :options="envChartOptions" :plugins="[selectPlugin]" /></div>
-            </section>
+            <RawCharts :records="records" :air-records="airRecords" :range="range" :stale-after-ms="staleAfterMs" :bucket-seconds="bucketSeconds"
+              :sensors="orderedSensors" :chosen="method" :latest="latest" :air-device-id="air?.device_id" :plugins="[selectPlugin]" />
           </template>
 
           <p class="muted small">
@@ -165,16 +149,14 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { Line } from 'vue-chartjs';
-import { Chart as ChartJS, LinearScale, PointElement, LineElement, Tooltip, Legend, type ChartOptions, type Plugin } from 'chart.js';
 import { useTheme } from '../composables/useTheme';
 import DemoTag from '../components/clothes/DemoTag.vue';
-import { PRESETS, SENSORS, useClothesHistory, withClip, type Field, type Sensor } from '../composables/useClothesData';
+import RawCharts from '../components/clothes/RawCharts.vue';
+import { useRangeSelect, type Picked } from '../composables/useRangeSelect';
+import { PRESETS, SENSORS, useClothesHistory, withClip, type Field } from '../composables/useClothesData';
 import { useClothesMock, type Method } from '../composables/useClothesMock';
 import { apiFetch } from '../composables/useAuth';
-import { DAY_MS, agoText, clock, formatAir, formatRaw, formatTime, fromTaipeiInput, toTaipeiInput } from '../utils/format';
-
-ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend);
+import { DAY_MS, agoText, clock, formatTime, fromTaipeiInput, toTaipeiInput } from '../utils/format';
 
 const route = useRoute();
 const { palette } = useTheme();
@@ -198,88 +180,6 @@ const orderedSensors = computed(() => [...SENSORS].sort((a, b) => Number(b.key =
 const latestJson = computed(() => latest.value
   ? `{\n  "hx711_raw":   ${latest.value.hx711_raw ?? 'null'},\n  "ads1115_raw": ${latest.value.ads1115_raw ?? 'null'},\n  "touch_raw":   ${latest.value.touch_raw ?? 'null'}\n}`
   : '—');
-
-// ---------------------------------------------------------------- charts
-const timeTick = (value: number) => {
-  const long = range.value.end.getTime() - range.value.start.getTime() > 6 * 60 * 60000;
-  return new Date(value).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false,
-    ...(long ? { month: 'numeric', day: 'numeric' } : {}), hour: '2-digit', minute: '2-digit', ...(long ? {} : { second: '2-digit' }) });
-};
-
-function chartData(sensor: Sensor) {
-  const points: { x: number; y: number | null }[] = [];
-  let previous: number | undefined;
-  // Break the line only where data was interrupted (the clip reports about once a minute),
-  // or across more than ~2 averaged buckets.
-  const gapMs = Math.max(staleAfterMs.value, bucketSeconds.value * 2500);
-  for (const record of records.value) {
-    const time = new Date(record.timestamp).getTime();
-    if (previous !== undefined && time - previous > gapMs) points.push({ x: previous + 1, y: null });
-    points.push({ x: time, y: record[sensor.key] });
-    previous = time;
-  }
-  const color = palette.value[sensor.color];
-  return { datasets: [{ label: sensor.title, data: points, borderColor: color, backgroundColor: color,
-    borderWidth: 2, pointRadius: records.value.length === 1 ? 3 : 0, pointHitRadius: 8, spanGaps: false, tension: 0 }] };
-}
-// Built once per data change, so typing in the export form or dragging never rebuilds the charts.
-const chartDatasets = computed(() => Object.fromEntries(SENSORS.map((s) => [s.key, chartData(s)])) as Record<Field, ReturnType<typeof chartData>>);
-
-const envChartData = computed(() => {
-  const series = (key: 'temp' | 'humi') => {
-    const points: { x: number; y: number | null }[] = [];
-    let previous: number | undefined;
-    for (const reading of airRecords.value) {
-      const time = new Date(reading.timestamp).getTime();
-      // The box reports about once a minute; break the line if it went quiet for over 5 minutes.
-      if (previous !== undefined && time - previous > 5 * 60000) points.push({ x: previous + 1, y: null });
-      points.push({ x: time, y: reading[key] });
-      previous = time;
-    }
-    const color = palette.value[key];
-    return { label: key === 'temp' ? '環境溫度' : '環境濕度', data: points, yAxisID: key === 'temp' ? 'y' : 'y1', borderColor: color,
-      backgroundColor: color, borderWidth: 2, pointRadius: airRecords.value.length === 1 ? 3 : 0, pointHitRadius: 8, spanGaps: false, tension: 0 };
-  };
-  return { datasets: [series('temp'), series('humi')] };
-});
-
-// Round tick spacing (whole minutes/hours) so labels read 10:00, 12:00 … rather than 10:26.
-const TICK_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 240, 360].map((m) => m * 60000);
-const tickStep = (spanMs: number) => TICK_STEPS.find((step) => spanMs / step <= 7) ?? TICK_STEPS[TICK_STEPS.length - 1];
-
-// Fixed x range: the axis shows the whole requested window, even when data covers only part of it.
-const chartOptions = computed<ChartOptions<'line'>>(() => {
-  const p = palette.value;
-  return {
-    responsive: true, maintainAspectRatio: false, animation: false,
-    interaction: { mode: 'nearest', intersect: false },
-    events: ['mousemove', 'mouseout', 'mousedown', 'mouseup', 'click', 'touchstart', 'touchmove', 'touchend'],
-    plugins: { legend: { display: false }, tooltip: { backgroundColor: p.tooltip, callbacks: {
-      title: (items) => items.length && items[0].parsed.x != null ? formatTime(items[0].parsed.x) : '',
-    } } },
-    scales: {
-      x: { type: 'linear', min: range.value.start.getTime(), max: range.value.end.getTime(),
-        ticks: { color: p.mu, stepSize: tickStep(range.value.end.getTime() - range.value.start.getTime()), maxTicksLimit: 8,
-          callback: (value) => timeTick(Number(value)) }, grid: { display: false }, border: { color: p.bd } },
-      y: { title: { display: true, text: '原始計數', color: p.mu }, ticks: { color: p.mu, precision: 0 }, grid: { color: p.grid }, border: { color: p.bd } },
-    },
-  };
-});
-const envChartOptions = computed<ChartOptions<'line'>>(() => {
-  const p = palette.value;
-  return {
-    ...chartOptions.value,
-    plugins: { legend: { display: false }, tooltip: { backgroundColor: p.tooltip, callbacks: {
-      title: (items) => items.length && items[0].parsed.x != null ? formatTime(items[0].parsed.x) : '',
-      label: (item) => `${item.dataset.label}：${formatAir(item.parsed.y)} ${item.datasetIndex === 0 ? '°C' : '%'}`,
-    } } },
-    scales: {
-      x: chartOptions.value.scales!.x!,
-      y: { position: 'left', title: { display: true, text: '溫度 °C', color: p.temp }, ticks: { color: p.temp }, grid: { color: p.grid } },
-      y1: { position: 'right', title: { display: true, text: '濕度 %', color: p.humi }, ticks: { color: p.humi }, grid: { display: false } },
-    },
-  };
-});
 
 // ---------------------------------------------------------------- CSV export
 // Own start/end so exporting never changes what the charts show.
@@ -328,98 +228,22 @@ async function downloadCsv() {
 }
 
 // ---------------------------------------------------------------- drag-to-select
-// Drag across any chart to pick an export range; the shaded band is drawn on all charts.
-// Once picked, the start and end lines have handles that can be dragged to adjust either side.
-const selection = ref<{ start: number; end: number } | null>(null);
-const charts = new Set<ChartJS>();
-let dragAnchor: number | null = null;  // the side that stays put while the other follows the pointer
-let resizing = false;
-let lastPointer: number | null = null;
-const pickedText = (picked: { start: number; end: number }) => `${formatTime(picked.start)} – ${formatTime(picked.end)}`;
-const hexAlpha = (hex: string, alpha: number) => {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
-const selectPlugin: Plugin<'line'> = {
-  id: 'rangeSelect',
-  afterInit: (chart) => { charts.add(chart as ChartJS); },
-  afterDestroy: (chart) => { charts.delete(chart as ChartJS); },
-  afterEvent(chart, args) {
-    const event = args.event;
-    // chart.update() replays the last event; acting on it would re-select and loop forever.
-    if (args.replay) return;
-    // A lifted finger (touchend) has no position; finish the drag where it last was.
-    const ended = event.type === 'mouseup' || event.type === 'mouseout';
-    if (event.x == null || !Number.isFinite(event.x)) { if (!ended || lastPointer === null) return; event.x = lastPointer; }
-    lastPointer = event.x;
-    const area = chart.chartArea;
-    const x = chart.scales.x;
-    const value = x.getValueForPixel(Math.min(Math.max(event.x, area.left), area.right)) as number;
-    // Which selection edge (if any) the pointer is on; fingers get a wider target than a mouse.
-    const reach = (event.native as Event | null)?.type.startsWith('touch') ? 18 : 7;
-    const current = selection.value;
-    const edge = !current ? null
-      : Math.abs(event.x - x.getPixelForValue(current.start)) <= reach ? 'start'
-      : Math.abs(event.x - x.getPixelForValue(current.end)) <= reach ? 'end' : null;
-    if (event.type === 'mousedown') {
-      if (current && edge) { dragAnchor = edge === 'start' ? current.end : current.start; resizing = true; return; }
-      dragAnchor = value; resizing = false; selection.value = null; return;
-    }
-    if (dragAnchor === null) {
-      if (event.type === 'mousemove') chart.canvas.style.cursor = edge ? 'ew-resize' : 'crosshair';
-      return;
-    }
-    const picked = { start: Math.min(dragAnchor, value), end: Math.max(dragAnchor, value) };
-    if (event.type === 'mousemove') {
-      selection.value = picked;
-      if (resizing) setExportRange(new Date(picked.start), new Date(picked.end));
-    } else if (ended) {
-      dragAnchor = null;
-      if (picked.end - picked.start < 1000) {  // a click, not a drag (or both edges pulled together)
-        if (!resizing) selection.value = null;
-        resizing = false; return;
-      }
-      selection.value = picked;
-      setExportRange(new Date(picked.start), new Date(picked.end));
-      exportNotice(`已${resizing ? '調整' : '從圖表選取'} ${pickedText(picked)}，可拖曳兩側直線微調，或直接下載。`);
-      resizing = false;
-    }
+// Drag across any chart to pick an export range (useRangeSelect); the edges can then be adjusted.
+const pickedText = (picked: Picked) => `${formatTime(picked.start)} – ${formatTime(picked.end)}`;
+const { selection, plugin: selectPlugin, dragging } = useRangeSelect({
+  onMove: (picked, resizing) => { if (resizing) setExportRange(new Date(picked.start), new Date(picked.end)); },
+  onPick: (picked, resizing) => {
+    setExportRange(new Date(picked.start), new Date(picked.end));
+    exportNotice(`已${resizing ? '調整' : '從圖表選取'} ${pickedText(picked)}，可拖曳兩側直線微調，或直接下載。`);
   },
-  beforeDatasetsDraw(chart) {
-    if (!selection.value) return;
-    const { ctx, chartArea: area, scales: { x } } = chart;
-    const left = Math.max(area.left, x.getPixelForValue(selection.value.start));
-    const right = Math.min(area.right, x.getPixelForValue(selection.value.end));
-    if (right <= left) return;
-    ctx.save(); ctx.fillStyle = hexAlpha(palette.value.ac, 0.14); ctx.fillRect(left, area.top, right - left, area.bottom - area.top); ctx.restore();
-  },
-  afterDatasetsDraw(chart) {
-    if (!selection.value) return;
-    const { ctx, chartArea: area, scales: { x } } = chart;
-    const middle = (area.top + area.bottom) / 2;
-    ctx.save();
-    for (const time of [selection.value.start, selection.value.end]) {
-      const px = Math.round(x.getPixelForValue(time)) + 0.5;
-      if (px < area.left - 1 || px > area.right + 1) continue;  // edge is outside the visible window
-      ctx.strokeStyle = palette.value.ac; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(px, area.top); ctx.lineTo(px, area.bottom); ctx.stroke();
-      // Grip: a small pill with two ridges so the line reads as draggable.
-      ctx.fillStyle = palette.value.sf; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.roundRect(px - 5, middle - 13, 10, 26, 4); ctx.fill(); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(px - 1.5, middle - 6); ctx.lineTo(px - 1.5, middle + 6);
-      ctx.moveTo(px + 1.5, middle - 6); ctx.lineTo(px + 1.5, middle + 6); ctx.stroke();
-    }
-    ctx.restore();
-  },
-};
+});
 // Typing a valid range in the export fields moves the lines too, so both stay in agreement.
 watch([exportStart, exportEnd], ([startText, endText]) => {
-  if (dragAnchor !== null) return;  // the drag itself is writing these fields
+  if (dragging()) return;  // the drag itself is writing these fields
   const start = fromTaipeiInput(startText).getTime(), end = fromTaipeiInput(endText).getTime();
   if (Number.isFinite(start) && Number.isFinite(end) && start < end) selection.value = { start, end };
 });
 function clearSelection() { selection.value = null; exportNotice(''); }
-watch([selection, palette], () => charts.forEach((chart) => { chart.draw(); }));
 
 async function zoomToSelection() {
   const picked = selection.value;
@@ -473,8 +297,6 @@ const sessionStart = computed(() => {
 .chosen-tag { font-style: normal; font-size: 0.75rem; font-weight: 500; padding: 2px 8px; border-radius: 999px; background: var(--ac-soft); color: var(--ac-tx); }
 .reading { font-size: 2.25rem; font-weight: 700; line-height: 1; }
 .reading small { font-size: 1rem; color: var(--mu); font-weight: 400; }
-.chart { height: 195px; cursor: crosshair; user-select: none; }
-.chart :deep(canvas) { touch-action: pan-y; }  /* horizontal finger drags select; vertical ones still scroll */
 .small { font-size: 0.875rem; }
 .demo-chart { display: block; }
 .axis { display: flex; justify-content: space-between; gap: 12px; }
