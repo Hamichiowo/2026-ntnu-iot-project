@@ -70,6 +70,9 @@
               <div class="weather">
                 <svg width="28" height="28" viewBox="0 0 56 56" fill="none" aria-hidden="true"><circle cx="28" cy="28" r="11" :stroke="palette.wa" stroke-width="4" /><path d="M28 6v6M28 44v6M6 28h6M44 28h6M12.4 12.4l4.2 4.2M39.4 39.4l4.2 4.2M12.4 43.6l4.2-4.2M39.4 16.6l4.2-4.2" :stroke="palette.wa" stroke-width="4" stroke-linecap="round" /></svg>
                 <span class="ellipsis">{{ weatherText }}</span>
+                <select v-if="counties.length" v-model="county" class="weather-select" aria-label="戶外天氣縣市">
+                  <option v-for="name in counties" :key="name" :value="name">{{ name }}</option>
+                </select>
               </div>
               <div role="status" aria-live="polite" class="alert-slot">
                 <div v-if="alerts.length" class="alert">
@@ -173,6 +176,9 @@
             <div class="weather">
               <svg width="28" height="28" viewBox="0 0 56 56" fill="none" aria-hidden="true"><circle cx="28" cy="28" r="11" :stroke="palette.wa" stroke-width="4" /><path d="M28 6v6M28 44v6M6 28h6M44 28h6M12.4 12.4l4.2 4.2M39.4 39.4l4.2 4.2M12.4 43.6l4.2-4.2M39.4 16.6l4.2-4.2" :stroke="palette.wa" stroke-width="4" stroke-linecap="round" /></svg>
               <span class="ellipsis">{{ weatherText }}</span>
+              <select v-if="counties.length" v-model="county" class="weather-select" aria-label="戶外天氣縣市">
+                <option v-for="name in counties" :key="name" :value="name">{{ name }}</option>
+              </select>
             </div>
           </div>
         </div>
@@ -220,8 +226,8 @@
         </section>
       </div>
 
-      <p v-if="mock.demoEnabled.value" class="demo-note">標了「示範」的衣物與晾衣是示範資料，剩餘水分與乾燥曲線為模擬；戶外天氣也是示範資料。衣夾-01 的晾衣、衣物與紀錄是實際資料，存在伺服器；它的預計乾燥時間依這件衣物過去的乾燥時間估算，剩餘水分尚未實作。空氣盒子溫濕度為實際資料。可在設定關閉示範資料。</p>
-      <p v-else class="demo-note">衣物與晾衣紀錄存在伺服器；預計乾燥時間依這件衣物過去的乾燥時間估算（第一次晾用材質預設值）。空氣盒子溫濕度為實際資料。剩餘水分與戶外天氣尚未實作。</p>
+      <p v-if="mock.demoEnabled.value" class="demo-note">標了「示範」的衣物與晾衣是示範資料，剩餘水分、乾燥曲線與降雨時間為模擬；戶外溫濕度來自氣象署。衣夾-01 的晾衣、衣物與紀錄是實際資料，存在伺服器；它的預計乾燥時間依這件衣物過去的乾燥時間估算，剩餘水分尚未實作。空氣盒子溫濕度為實際資料。可在設定關閉示範資料。</p>
+      <p v-else class="demo-note">衣物與晾衣紀錄存在伺服器；預計乾燥時間依這件衣物過去的乾燥時間估算（第一次晾用材質預設值）。空氣盒子與氣象署戶外溫濕度為實際資料；剩餘水分與降雨預測尚未實作。</p>
     </div>
   </div>
 </template>
@@ -237,12 +243,14 @@ import { BASE_MINUTES, SHAPES, colorName, type Material } from '../constants/gar
 import { useTheme } from '../composables/useTheme';
 import { useClothesLive } from '../composables/useClothesData';
 import { dryAt, moistureAt, useClothesMock, type GarmentDraft } from '../composables/useClothesMock';
+import { useOutdoorWeather } from '../composables/useOutdoorWeather';
 import { DAY_MS, TAIPEI_MS, clock, dayLabel, formatAir, minutesText, shortDuration } from '../utils/format';
 
 const { palette } = useTheme();
 const { air } = useClothesLive();
 const mock = useClothesMock();
-const { weather, busyGarmentIds, dryCount, garmentById, clipById } = mock;
+const { weather: demoWeather, busyGarmentIds, dryCount, garmentById, clipById } = mock;
+const { counties, county, outdoor, loading: weatherLoading, error: weatherError } = useOutdoorWeather();
 const MIN = 60000;
 
 const items = computed(() => mock.state.sessions.flatMap((session) => {
@@ -357,7 +365,7 @@ const alerts = computed(() => {
   if (!c) return [];
   const out: { msg: string; action: string }[] = [];
   // The weather is demo data, so it only warns about demo sessions.
-  const w = c.session.demo ? weather.value : null;
+  const w = c.session.demo ? demoWeather.value : null;
   if (w && c.dryTime && c.dryTime > w.rainAt && w.rainAt - mock.now.value < DAY_MS / 2)
     out.push({ msg: `${c.garment.name}預計 ${clock(c.dryTime)} 才乾，但 ${clock(w.rainAt)} 起降雨機率 ${w.rainChance}%，`, action: `建議 ${clock(w.rainAt - 30 * MIN)} 前收進室內` });
   const humi = shownAir.value?.humi;
@@ -387,16 +395,18 @@ const airNote = computed(() => {
 // ----- idle state
 // Same layout either way: without the demo there is no prediction yet, so each row shows NONE.
 const weatherText = computed(() => {
-  const w = weather.value;
-  return w ? `${w.summary} · ${clock(w.rainAt)} 起降雨機率 ${w.rainChance}%` : '戶外天氣 NONE';
+  const value = outdoor.value;
+  if (value) return `戶外 ${value.temp == null ? '—' : `${value.temp}°C`} · ${value.hum == null ? '—' : `${Math.round(value.hum)}%RH`} · ${value.stations} 站中位數`;
+  if (weatherLoading.value) return '正在取得氣象署戶外天氣';
+  return weatherError.value || '戶外天氣無數據';
 });
 const idleForecast = computed(() => (['聚酯纖維', '棉', '牛仔布'] as Material[]).map((material) => {
-  if (!weather.value) return { material, text: 'NONE', tone: 'muted' };
+  if (!demoWeather.value) return { material, text: 'NONE', tone: 'muted' };
   const t = mock.now.value + BASE_MINUTES[material] * MIN;
   const local = new Date(t + TAIPEI_MS);
   const nextDay = Math.floor((t + TAIPEI_MS) / DAY_MS) !== Math.floor((mock.now.value + TAIPEI_MS) / DAY_MS);
   if (nextDay || local.getUTCHours() >= 21) return { material, text: '建議明天再晾', tone: 'wa-tx' };
-  if (t > weather.value.rainAt) return { material, text: `${clock(t)} · 會碰到雨`, tone: 'wa-tx' };
+  if (t > demoWeather.value.rainAt) return { material, text: `${clock(t)} · 會碰到雨`, tone: 'wa-tx' };
   return { material, text: clock(t), tone: '' };
 }));
 
@@ -459,6 +469,8 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .big small { font-size: 1.125rem; color: var(--mu); }
 .air-note { margin-top: -16px; font-size: 0.875rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .weather { display: flex; align-items: center; gap: 12px; color: var(--tx2); }
+.weather .ellipsis { flex: 1; min-width: 0; }
+.weather-select { max-width: 8rem; border: 1px solid var(--bd2); border-radius: 6px; background: var(--sf2); color: var(--tx); padding: 6px 8px; font: inherit; }
 .alert-slot { height: 92px; }
 .alert { height: 100%; display: flex; align-items: center; gap: 14px; padding: 0 20px; border-radius: 12px; line-height: 1.45; background: var(--wa-soft); border: 1px solid var(--wa-bd); }
 .alert svg { flex: 0 0 auto; }

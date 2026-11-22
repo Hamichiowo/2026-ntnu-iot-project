@@ -411,8 +411,8 @@ function applyMetricPreset(preset: 'all' | 'common' | 'temp_rh' | 'pm' | 'gas' |
 }
 
 function resetYRanges() {
-  Object.keys(customYMin).forEach((k) => delete customYMin[k]);
-  Object.keys(customYMax).forEach((k) => delete customYMax[k]);
+  Object.keys(customYMin).forEach((k) => { delete customYMin[k]; });
+  Object.keys(customYMax).forEach((k) => { delete customYMax[k]; });
 }
 
 // Summary statistics for each active metric

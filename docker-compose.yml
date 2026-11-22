@@ -53,6 +53,8 @@ services:
       CLOTHES_MQTT_TOPIC: ${CLOTHES_MQTT_TOPIC:-clothes/raw}
       CLOTHES_AIRBOX_ID: ${CLOTHES_AIRBOX_ID:-}
       SESSION_SECRET: ${SESSION_SECRET:-maps6_super_secret_session_key}
+      CWA_API_KEY: ${CWA_API_KEY:-}
+      CWA_STATION: ${CWA_STATION:-臺北}
       PORT: 3000
     depends_on:
       mosquitto:

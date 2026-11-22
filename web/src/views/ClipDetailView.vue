@@ -418,7 +418,7 @@ watch([exportStart, exportEnd], ([startText, endText]) => {
   if (Number.isFinite(start) && Number.isFinite(end) && start < end) selection.value = { start, end };
 });
 function clearSelection() { selection.value = null; exportNotice(''); }
-watch([selection, palette], () => charts.forEach((chart) => chart.draw()));
+watch([selection, palette], () => charts.forEach((chart) => { chart.draw(); }));
 
 async function zoomToSelection() {
   const picked = selection.value;

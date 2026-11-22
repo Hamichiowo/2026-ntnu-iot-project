@@ -205,6 +205,8 @@ Topic：`clothes/raw`。約每分鐘一筆（有人碰衣夾時每 10 秒），Q
 | `GET /api/v1/clothes/history?start=<ISO時間>&end=<ISO時間>&limit=5000` | 時間範圍內資料，按時間遞增；最多查 24 小時。資料超過 limit 筆時，改回傳每 `bucket_seconds` 秒的平均值，讓整段範圍都看得到（全為 null 的區間仍為 null） |
 | `GET /api/v1/clothes/export?start=<ISO時間>&end=<ISO時間>` | 下載原始資料 CSV（不平均，UTF-8 含 BOM，Excel 可直接開）；start、end 皆必填，最長 7 天 |
 | `GET /api/v1/clothes/airboxes` | 列出所有空氣盒子與是否連線（5 分鐘內有回報） |
+| `GET /api/v1/weather/counties` | 氣象署可選縣市與預設縣市 |
+| `GET /api/v1/weather/outdoor?county=臺北市` | 指定縣市的測站溫濕度中位數 |
 
 - CSV 欄位：`time_taipei,timestamp_utc,hx711_raw,ads1115_raw,touch_raw,air_temp_c,air_humi_pct`，讀取失敗的值為空白。
 - 空氣盒子溫溼度：`latest`、`history` 會附上 `air`；CSV 的 `air_temp_c`、`air_humi_pct` 取「該筆衣夾資料當下或之前、5 分鐘內最近一筆」空氣盒子讀值，超過 5 分鐘沒有讀值則留空。
