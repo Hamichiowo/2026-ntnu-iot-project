@@ -8,8 +8,11 @@ import HistoryView from '../views/HistoryView.vue';
 import DeviceDetailView from '../views/DeviceDetailView.vue';
 import SettingsView from '../views/SettingsView.vue';
 import WeatherView from '../views/WeatherView.vue';
+import LoginView from '../views/LoginView.vue';
+import { checkSession, useAuth } from '../composables/useAuth';
 
 const routes = [
+  { path: '/login', name: 'Login', component: LoginView, meta: { public: true } },
   // 智慧衣夾
   { path: '/', name: 'Overview', component: OverviewView },
   { path: '/start', name: 'StartFlow', component: StartFlowView },
@@ -23,11 +26,21 @@ const routes = [
   { path: '/settings', name: 'Settings', component: SettingsView },
   // 舊網址
   { path: '/air', redirect: '/devices' },
-  { path: '/login', redirect: '/' },
 ];
 
 export const router = createRouter({
   history: createWebHistory(),
   routes,
   scrollBehavior: (to, _from, saved) => saved ?? (to.hash ? { el: to.hash, behavior: 'smooth' } : { top: 0 }),
+});
+
+router.beforeEach(async (to) => {
+  const { authenticated, checked } = useAuth();
+  if (!checked.value) await checkSession();
+  if (to.meta.public) {
+    if (to.name === 'Login' && authenticated.value) return '/';
+    return true;
+  }
+  if (!authenticated.value) return { name: 'Login', query: { redirect: to.fullPath } };
+  return true;
 });
