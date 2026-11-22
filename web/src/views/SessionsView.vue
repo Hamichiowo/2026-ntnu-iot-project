@@ -1,7 +1,8 @@
 <template>
   <div class="page">
+    <router-link to="/garments" class="back">← 衣物管理</router-link>
     <div class="page-head">
-      <h1>晾衣紀錄</h1>
+      <h1>全部晾衣紀錄</h1>
       <button type="button" class="ui-btn" @click="exportCsv">匯出 CSV</button>
     </div>
 
@@ -25,8 +26,8 @@
             <thead><tr><th scope="col">日期</th><th scope="col">衣物</th><th scope="col">實際</th><th scope="col">預測</th><th scope="col">誤差</th></tr></thead>
             <tbody>
               <tr v-if="!rows.length"><td colspan="5" class="muted">還沒有晾衣紀錄</td></tr>
-              <tr v-for="row in rows" :key="row.id">
-                <td>{{ row.date }}</td>
+              <tr v-for="row in rows" :key="row.id" class="link-row" tabindex="0" @click="open(row.id)" @keydown.enter="open(row.id)">
+                <td><router-link :to="`/sessions/${row.id}`" class="row-link" @click.stop>{{ row.date }}</router-link></td>
                 <td class="strong">{{ row.name }} <small class="muted">{{ row.material }}</small> <DemoTag v-if="row.demo" /></td>
                 <td :class="row.actualTone">{{ row.actual }}</td>
                 <td>{{ row.predicted }}</td>
@@ -61,18 +62,21 @@
       <span>標了「示範」的紀錄是示範資料（存在伺服器，以 is_demo 標記），不列入上方統計；「感測法預測誤差」也是示範數字。{{ hasDemo ? '' : '目前還沒有示範資料，執行 make seed 或按右邊的按鈕建立。' }}可在設定關閉示範資料。</span>
       <button type="button" class="ui-btn ui-btn--ghost" @click="resetDemo">{{ hasDemo ? '重設示範資料' : '建立示範資料' }}</button>
     </div>
-    <p v-else class="demo-note">只列出實際的晾衣紀錄（存在伺服器）。預測是這件衣物過去的平均乾燥時間，第一次晾用材質預設值；提早收起的紀錄不列入誤差。</p>
+    <p v-else class="demo-note">只列出實際的晾衣紀錄（存在伺服器），點選一筆可查看感測曲線、修改或刪除。預測是這件衣物過去的平均乾燥時間，第一次晾用材質預設值；提早收起的紀錄不列入誤差。</p>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useRouter } from 'vue-router';
 import { SENSORS } from '../composables/useClothesData';
 import DemoTag from '../components/clothes/DemoTag.vue';
 import { METHOD_ERROR, useClothesMock } from '../composables/useClothesMock';
 import { TAIPEI_MS, monthDay, shortDuration } from '../utils/format';
 
 const mock = useClothesMock();
+const router = useRouter();
+const open = (id: string) => { void router.push(`/sessions/${id}`); };
 // Every session has a prediction from the server (history average or material default).
 // The per-method error panel is demo data only.
 const predicting = computed(() => mock.demoEnabled.value);
@@ -154,6 +158,12 @@ function resetDemo() {
 </script>
 
 <style scoped>
+.back { align-self: flex-start; font-size: 0.9375rem; color: var(--tx2); text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; }
+.back:hover { color: var(--tx); }
+.link-row { cursor: pointer; }
+.link-row:hover td { background: var(--sf2); }
+.row-link { color: inherit; text-decoration: none; }
+.row-link:hover { text-decoration: underline; }
 .layout { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
 .main-col { flex: 999 1 640px; }
 .side-col { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 24px; }

@@ -262,3 +262,48 @@ export function useClothesHistory() {
     mode, customStart, customEnd, rangeError, range, refreshSeconds, applyCustom, loadHistory,
   };
 }
+
+// ---------------------------------------------------------------- one-off history (drying records)
+// Raw readings and the paired air box over any window up to HISTORY_MAX_MS, outside the shared
+// history state above (the clip detail page keeps its own window). Readings come from the real
+// clip; without a clip id the server pairs the real clip's air box.
+export const HISTORY_MAX_MS = 2 * DAY_MS;
+export interface RawHistory { records: Reading[]; air: AirReading[]; airDeviceId: string | null; bucketSeconds: number; staleAfterMs: number }
+export async function fetchRawHistory(start: Date, end: Date, clipId?: string): Promise<RawHistory> {
+  const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString(), limit: '5000' });
+  if (clipId) params.set('clip', clipId);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await apiFetch(`/api/v1/clothes/history?${params}`, { cache: 'no-store', signal: controller.signal });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.success) throw new Error(data?.error || `HTTP ${response.status}`);
+    return { records: data.records, air: data.air?.records ?? [], airDeviceId: data.air?.device_id ?? null,
+      bucketSeconds: data.bucket_seconds ?? 0, staleAfterMs: staleAfterMs.value };
+  } catch (err) {
+    throw (err as Error).name === 'AbortError' ? new Error('伺服器沒有回應') : err;
+  } finally { clearTimeout(timeout); }
+}
+
+// CSV of raw readings (with air temperature/humidity) for [start, end]. Returns the file name and
+// row count, or 0 rows (nothing downloaded) when the range is empty.
+export async function downloadRawCsv(start: Date, end: Date, clipId?: string): Promise<{ name: string; rows: number }> {
+  const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString() });
+  if (clipId) params.set('clip', clipId);
+  const response = await apiFetch(`/api/v1/clothes/export?${params}`, { cache: 'no-store' });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error || `HTTP ${response.status}`);
+  }
+  const blob = await response.blob();
+  const text = await blob.text();
+  let rows = -1;  // the header line is not a reading
+  for (let at = text.indexOf('\n'); at !== -1; at = text.indexOf('\n', at + 1)) rows++;
+  const name = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? 'clothes_raw.csv';
+  if (rows <= 0) return { name, rows: 0 };
+  const url = URL.createObjectURL(blob);
+  const link = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return { name, rows };
+}
