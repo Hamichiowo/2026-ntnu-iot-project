@@ -196,14 +196,21 @@ export function summarizeCounty(observations: Observation[], county: string) {
 const defaultStation = () => process.env.CWA_STATION || '臺北';
 const defaultCounty = (observations: Observation[]) => observations.find((item) => item.name === defaultStation())?.county;
 
-async function countyDetail(requested: string | undefined) {
-  const [observationMap, forecastMap] = await Promise.all([loadObservations(), loadForecasts()]);
+async function countyCurrent(requested: string | undefined) {
+  const observationMap = await loadObservations();
   const observations = [...observationMap.values()];
   const county = requested || defaultCounty(observations);
   if (!county) return null;
-  const current = summarizeCounty(observations, county);
+  return summarizeCounty(observations, county);
+}
+
+async function countyDetail(requested: string | undefined) {
+  const [current, forecastMap] = await Promise.all([
+    countyCurrent(requested),
+    loadForecasts().catch(() => new Map<string, ForecastPeriod[]>()),
+  ]);
   if (!current) return null;
-  return { current, forecast: forecastMap.get(county) ?? [], forecast_updated_at: forecastCache?.at ?? null };
+  return { current, forecast: forecastMap.get(current.county) ?? [], forecast_updated_at: forecastCache?.at ?? null };
 }
 
 weatherRoute.get('/counties', async (context) => {
@@ -218,9 +225,9 @@ weatherRoute.get('/counties', async (context) => {
 
 weatherRoute.get('/outdoor', async (context) => {
   try {
-    const detail = await countyDetail(context.req.query('county'));
-    if (!detail) return context.json({ success: false, error: '找不到這個縣市' }, 404);
-    return context.json({ success: true, data: detail.current });
+    const current = await countyCurrent(context.req.query('county'));
+    if (!current) return context.json({ success: false, error: '找不到這個縣市' }, 404);
+    return context.json({ success: true, data: current });
   } catch (error) {
     return context.json({ success: false, error: (error as Error).message }, 502);
   }

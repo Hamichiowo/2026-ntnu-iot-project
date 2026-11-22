@@ -157,7 +157,10 @@ const advice = computed(() => {
 function display(value: number | null | undefined, digits = 1) {
   return value == null ? '—' : value.toFixed(digits).replace(/\.0$/, '');
 }
-function cwaDate(value: string) { return new Date(`${value.replace(' ', 'T')}+08:00`); }
+function cwaDate(value: string) {
+  const normalized = value.replace(' ', 'T');
+  return new Date(/[zZ]|[+-]\d{2}:\d{2}$/.test(normalized) ? normalized : `${normalized}+08:00`);
+}
 function periodLabel(period: ForecastPeriod) {
   const start = cwaDate(period.start);
   const end = cwaDate(period.end);

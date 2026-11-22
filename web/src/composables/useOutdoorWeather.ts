@@ -34,6 +34,7 @@ const loading = ref(false);
 const error = ref('');
 let consumers = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
+let latestRequest = 0;
 
 async function request(path: string) {
   const controller = new AbortController();
@@ -50,17 +51,23 @@ async function request(path: string) {
 
 async function loadOutdoor() {
   if (!county.value) return;
+  const requestId = ++latestRequest;
   loading.value = true;
   try {
     const data = await request(`/api/v1/weather/detail?county=${encodeURIComponent(county.value)}`);
+    if (requestId !== latestRequest) return;
     outdoor.value = data.data.current;
     forecast.value = data.data.forecast;
     forecastUpdatedAt.value = data.data.forecast_updated_at;
     error.value = '';
   } catch {
+    if (requestId !== latestRequest) return;
+    outdoor.value = null;
+    forecast.value = [];
+    forecastUpdatedAt.value = null;
     error.value = '氣象署資料暫時無法取得';
   } finally {
-    loading.value = false;
+    if (requestId === latestRequest) loading.value = false;
   }
 }
 
