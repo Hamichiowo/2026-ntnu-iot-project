@@ -522,6 +522,11 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
   .alert { font-size: 0.9375rem; line-height: 1.35; }
 }
 
+/* Phones scroll naturally, so the 往下查看更多 hint is only for desktop. */
+@media (max-width: 900px) {
+  .more-link { display: none; }
+}
+
 @media (max-width: 640px) {
   .hero-inner { padding: 28px 16px 16px; }
   .view-top { flex-wrap: wrap; }
