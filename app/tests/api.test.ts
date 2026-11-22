@@ -62,8 +62,14 @@ describe('REST API Routes', () => {
     csrfToken = data.csrfToken;
   });
 
-  it('rejects protected APIs without a session or CSRF token', async () => {
+  it('reports an anonymous session without exposing protected APIs', async () => {
+    const me = await app.request('/api/v1/auth/me');
+    expect(me.status).toBe(200);
+    expect(await json<{ authenticated: boolean }>(me)).toEqual(expect.objectContaining({ authenticated: false }));
     expect((await app.request('/api/v1/devices')).status).toBe(401);
+  });
+
+  it('rejects protected APIs without a session or CSRF token', async () => {
     await authenticate();
     const response = await app.request('/api/v1/devices/TEST_DEV_01/command', {
       method: 'POST',

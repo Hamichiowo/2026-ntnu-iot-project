@@ -54,11 +54,12 @@ authRoute.post('/logout', (c) => {
 
 // GET /api/v1/auth/me
 authRoute.get('/me', (c) => {
-  const session = readSession(c);
-  if (!session) return c.json({ success: false, error: 'Unauthorized' }, 401);
   c.header('Cache-Control', 'no-store');
+  const session = readSession(c);
+  if (!session) return c.json({ success: true, authenticated: false, user: null });
   return c.json({
     success: true,
+    authenticated: true,
     user: { username: session.username, role: 'administrator' },
     csrfToken: session.csrfToken,
     expiresAt: session.expiresAt,

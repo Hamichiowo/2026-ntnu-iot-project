@@ -20,7 +20,7 @@ export const apiRouter = new Hono();
 
 apiRouter.use('*', async (context, next) => {
   const path = context.req.path;
-  if (path.endsWith('/auth/login')) return next();
+  if (path.endsWith('/auth/login') || path.endsWith('/auth/me')) return next();
   const deviceCredentialPath = /\/devices\/[^/]+\/(backfill(?:\/csv)?|date-summary)$/.test(path);
   if (deviceCredentialPath && context.req.header('Authorization')?.startsWith('Basic ')) return next();
   return sessionMiddleware(context, next);
