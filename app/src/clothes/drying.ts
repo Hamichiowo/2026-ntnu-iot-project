@@ -273,6 +273,35 @@ export function parseGarmentId(body: unknown): string {
   return body.garment_id;
 }
 
+// PATCH /sessions/:id on an ended record: move it to another garment and/or correct its times.
+// The longest record that can be set is RECORD_MAX_MS (the time editor shows at most two days).
+export const RECORD_MAX_MS = 48 * 60 * MIN;
+export interface RecordPatch { garment_id?: string; started_at?: Date; ended_at?: Date }
+export function parseRecordPatch(body: unknown): RecordPatch {
+  if (!isObject(body)) throw new HttpError(400, '內容必須是 JSON 物件');
+  checkKeys(body, ['garment_id', 'started_at', 'ended_at']);
+  const out: RecordPatch = {};
+  if (body.garment_id !== undefined) {
+    if (!isUuid(body.garment_id)) throw new HttpError(400, '欄位 garment_id 必須是衣物的 UUID');
+    out.garment_id = body.garment_id;
+  }
+  for (const key of ['started_at', 'ended_at'] as const) {
+    if (body[key] === undefined) continue;
+    const date = typeof body[key] === 'string' ? new Date(body[key] as string) : new Date(NaN);
+    if (!Number.isFinite(date.getTime())) throw new HttpError(400, `欄位 ${key} 時間格式錯誤`);
+    out[key] = date;
+  }
+  if (!Object.keys(out).length) throw new HttpError(400, '沒有要更新的欄位');
+  if (out.started_at && out.ended_at) checkRecordTimes(out.started_at, out.ended_at);
+  return out;
+}
+
+export function checkRecordTimes(start: Date, end: Date, now?: Date) {
+  if (start >= end) throw new HttpError(400, '結束需晚於開始');
+  if (end.getTime() - start.getTime() > RECORD_MAX_MS) throw new HttpError(400, '一筆紀錄最長 48 小時');
+  if (now && end > now) throw new HttpError(400, '結束時間不能晚於現在');
+}
+
 export function parseOutcome(body: unknown): Outcome {
   if (!isObject(body)) throw new HttpError(400, '內容必須是 JSON 物件');
   checkKeys(body, ['outcome']);
@@ -386,6 +415,7 @@ export async function listGarments(includeDemo = false) {
   return database()`
     SELECT g.id, g.name, g.style, g.color, g.material, g.is_demo, g.created_at, g.updated_at,
       (SELECT count(*)::int FROM drying_sessions s WHERE s.garment_id = g.id AND s.outcome = 'dry') AS dry_count,
+      (SELECT count(*)::int FROM drying_sessions s WHERE s.garment_id = g.id) AS session_count,
       EXISTS (SELECT 1 FROM drying_sessions s WHERE s.garment_id = g.id AND s.ended_at IS NULL) AS busy
     FROM garments g WHERE ${includeDemo} OR NOT g.is_demo ORDER BY g.is_demo, g.created_at, g.id`;
 }
@@ -402,7 +432,7 @@ async function insertGarment(tx: any, draft: GarmentDraft, isDemo: boolean) {
 export async function createGarment(draft: GarmentDraft, isDemo = false) {
   try {
     const garment = await database().begin((tx: any) => insertGarment(tx, draft, isDemo));
-    return { ...garment, dry_count: 0, busy: false };
+    return { ...garment, dry_count: 0, session_count: 0, busy: false };
   } catch (error) {
     if (error instanceof HttpError) throw error;
     mapConstraint(error, `已經有名為「${draft.name}」的衣物`);
@@ -428,6 +458,20 @@ export async function updateGarment(id: string, patch: Partial<GarmentDraft>) {
     if (error instanceof HttpError) throw error;
     mapConstraint(error, `已經有名為「${patch.name}」的衣物`);
   }
+}
+
+// A garment with any session (drying or ended) cannot be removed: delete those records or move
+// them to another garment first, so no record ever loses its garment.
+export async function deleteGarment(id: string) {
+  checkId(id, '件衣物');
+  const sql = database();
+  await sql.begin(async (tx: any) => {
+    const rows = await tx`SELECT 1 FROM garments WHERE id = ${id}::uuid FOR UPDATE`;
+    if (!rows.length) throw new HttpError(404, '找不到這件衣物');
+    const used = await tx`SELECT count(*)::int AS n FROM drying_sessions WHERE garment_id = ${id}::uuid`;
+    if (used[0].n) throw new HttpError(409, `這件衣物還有 ${used[0].n} 筆晾衣紀錄，請先刪除或移到其他衣物`);
+    await tx`DELETE FROM garments WHERE id = ${id}::uuid`;
+  });
 }
 
 // ===== Sessions =====
@@ -519,4 +563,56 @@ export async function listRecords(start: Date | null, end: Date | null, limit: n
     SELECT count(*)::int AS total FROM drying_sessions
     WHERE ended_at IS NOT NULL AND started_at >= ${from} AND started_at <= ${to} AND (${includeDemo} OR NOT is_demo)`;
   return { records: rows.map(sessionOut), total: total[0].total as number };
+}
+
+// One session (drying or ended) with its garment.
+export async function getSession(id: string) {
+  checkId(id, '筆晾衣');
+  const session = (await selectSessions(database(), 'id', id))[0];
+  if (!session) throw new HttpError(404, '找不到這筆晾衣');
+  return session;
+}
+
+// Corrects an ended record. The prediction made at the time is kept; a 'dry' record's
+// actual minutes follow the new times. Drying sessions change garment via swapGarment.
+export async function updateRecord(id: string, patch: RecordPatch, now: Date) {
+  checkId(id, '筆晾衣');
+  const sql = database();
+  try {
+    await sql.begin(async (tx: any) => {
+      const rows = await tx`SELECT started_at, ended_at, outcome, is_demo FROM drying_sessions WHERE id = ${id}::uuid FOR UPDATE`;
+      if (!rows.length) throw new HttpError(404, '找不到這筆晾衣');
+      const row = rows[0];
+      if (!row.ended_at) throw new HttpError(409, '這筆晾衣還沒結束，請在晾衣中更換衣物');
+      if (patch.garment_id) {
+        const garment = (await tx`SELECT is_demo FROM garments WHERE id = ${patch.garment_id}::uuid`)[0];
+        if (!garment) throw new HttpError(404, '找不到這件衣物');
+        if (garment.is_demo !== row.is_demo) throw new HttpError(400, MIXED_DEMO);
+        await tx`UPDATE drying_sessions SET garment_id = ${patch.garment_id}::uuid WHERE id = ${id}::uuid`;
+      }
+      if (patch.started_at || patch.ended_at) {
+        const start = patch.started_at ?? new Date(row.started_at);
+        const end = patch.ended_at ?? new Date(row.ended_at);
+        checkRecordTimes(start, end, now);
+        const actual = row.outcome === 'dry' ? Math.round((end.getTime() - start.getTime()) / MIN) : null;
+        await tx`UPDATE drying_sessions SET started_at = ${start}, ended_at = ${end}, actual_min = ${actual} WHERE id = ${id}::uuid`;
+      }
+    });
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    mapConstraint(error, '這筆紀錄無法更新');
+  }
+  return getSession(id);
+}
+
+// Removes an ended record. A drying session is ended with 'cancel' instead.
+export async function deleteRecord(id: string) {
+  checkId(id, '筆晾衣');
+  const sql = database();
+  await sql.begin(async (tx: any) => {
+    const rows = await tx`SELECT ended_at FROM drying_sessions WHERE id = ${id}::uuid FOR UPDATE`;
+    if (!rows.length) throw new HttpError(404, '找不到這筆晾衣');
+    if (!rows[0].ended_at) throw new HttpError(409, '這筆晾衣還沒結束，請用「取消晾衣」');
+    await tx`DELETE FROM drying_sessions WHERE id = ${id}::uuid`;
+  });
 }

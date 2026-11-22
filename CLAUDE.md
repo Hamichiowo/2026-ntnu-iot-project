@@ -33,14 +33,15 @@ ESP32 智慧衣夾 → MQTT → 後端加上收到時間 → PostgreSQL → 網�
   - 判斷「衣夾跑的是不是這個韌體」用映像檔裡的 ELF SHA-256（`sha`），不是版本字串。
 
 ### 衣夾 API（`/api/v1/clothes`）
-- 原始資料：`GET /latest`、`GET /history?start&end&limit`（最多 24 小時，長範圍取平均 `bucket_seconds`）、`GET /export?start&end`（CSV，最多 7 天）、`GET /airboxes`。都可以帶 `?clip=`（預設 `c1`）或 `?airbox=`。
+- 原始資料：`GET /latest`、`GET /history?start&end&limit`（最多 48 小時，長範圍取平均 `bucket_seconds`）、`GET /export?start&end`（CSV，最多 7 天）、`GET /airboxes`。都可以帶 `?clip=`（預設 `c1`）或 `?airbox=`。
 - 配對的空氣盒子：`?airbox=` → `clips.airbox_id` → `CLOTHES_AIRBOX_ID` → 最近回報的盒子。`/airboxes` 的 `default_id` 就是這支衣夾實際用的盒子。
 - **ID 與名稱**：衣夾、衣物、晾衣的 id 都是 PostgreSQL 產生的 UUID（`gen_random_uuid()`），程式不自己產生 id，人只填名稱。路徑上的 id 不是 UUID 回 404，body 裡的回 400。
   - 名稱在真資料之間不能重複、在示範資料之間也不能重複（真的和示範的可以同名），忽略大小寫和頭尾空白，存的時候會先 trim。重複回 409。
   - 空氣盒子的 id 維持 MAC（盒子用它發 MQTT），但名稱 `display_name` 也不能重複。
 - 衣夾設定：`GET /clips`、`PATCH /clips/:id`（`name`、`airbox_id`、`predict_method`）、`DELETE /clips/:id`（只能刪示範衣夾）。`clips.topic` 標記哪支衣夾收哪個 MQTT topic：`topic = CLOTHES_MQTT_TOPIC` 的真衣夾就是實際的衣夾（啟動時沒有就建立「衣夾-01」），程式用 `rawClipId()` 找它，不要寫死 id。
-- 衣物庫：`GET/POST /garments`（可帶 `is_demo`）、`PATCH /garments/:id`。
+- 衣物庫：`GET/POST /garments`（可帶 `is_demo`；列表有 `dry_count`、`session_count`、`busy`）、`PATCH /garments/:id`、`DELETE /garments/:id`（只要還有任何晾衣，含晾衣中，就回 409，要先刪除紀錄或移到其他衣物）。
 - 晾衣：`GET /sessions/active`、`POST /sessions`（`garment_id` 或新的 `garment` 擇一）、`PATCH /sessions/:id/garment`、`POST /sessions/:id/end`（`dry`／`early`／`cancel`，cancel 會刪掉）、`GET /sessions?start&end&limit`（已結束的紀錄和 `total`）。
+- 單筆紀錄：`GET /sessions/:id`（晾衣中或已結束）、`PATCH /sessions/:id`（只限已結束：`garment_id`、`started_at`、`ended_at`；衣物要同為真/示範，時間要開始早於結束、不晚於現在、最長 48 小時，`dry` 紀錄重算 `actual_min`，`predicted_min` 保留當時的值）、`DELETE /sessions/:id`（只限已結束；晾衣中用 end `cancel`）。
 - 預測（`prediction.ts`）：這件衣物過去 `dry` 紀錄的平均，沒有紀錄用材質預設值 `BASE_MINUTES`（要和 `web/src/constants/garments.ts` 一致）。
 - **示範資料**：和真資料存在同一組表（`clips`、`garments`、`drying_sessions`），以 `is_demo = true` 標記。
   - 列表 API 預設**不回傳**示範資料，要帶 `?demo=include`；每一筆都有 `is_demo`。
@@ -93,14 +94,15 @@ make smoke       # 整合測試，需要 tools/config.json，會寫入測試資�
 - **衣夾、衣物、晾衣、紀錄**：`composables/useDrying.ts` 從 API 載入（示範開啟時帶 `?demo=include`），頁面開著時每 30 秒更新，每一筆都有 `demo`。寫入都送到伺服器，成功後重新載入；失敗時畫面不變並顯示錯誤（`actionError`）。localStorage 的 `clothes-demo-v1`、`clothes-local-v1` 已不再使用。
 - **`composables/useClothesMock.ts`**：頁面讀資料的入口（`state.garments/sessions/records` 等），底下是 `useDrying.ts`。只有「不是紀錄」的示範內容留在前端：示範衣夾的外觀（晶片、IP、訊號、故障）、示範天氣、示範剩餘水分曲線、各感測法的示範誤差。
 - **真假依衣夾分**：衣夾-01 只能晾真的衣物，示範衣夾只能晾示範衣物（開始晾衣、更換衣物都照這個過濾）。衣夾-01 的預計乾燥時間用伺服器的 `predicted_min`，剩餘水分還沒有，顯示 `NONE`；示範天氣的下雨提醒只套用在示範的晾衣。
-- **示範資料開關**：設定頁的「示範資料」（存在伺服器的 `demo_data`，所有瀏覽器一樣；伺服器存好才切換，失敗會顯示錯誤）。開啟時真的和示範的混在一起顯示並加標籤；關閉時只有真的。晾衣紀錄頁的統計只算真的。
+- **示範資料開關**：設定頁的「示範資料」（存在伺服器的 `demo_data`，所有瀏覽器一樣；伺服器存好才切換，失敗會顯示錯誤）。開啟時真的和示範的混在一起顯示並加標籤；關閉時只有真的。
 - **總覽版面規則**（`views/OverviewView.vue`）：
   - 桌機（寬 ≥ 901px、高 ≥ 600px）「往下查看更多」以上固定在一個畫面內；字級、間距用 `clamp(rem, vh, rem)` 隨高度縮放，太高的面板在右欄內捲動。
   - **切換衣物時版面不能跳**：每一格固定單行、固定行高；沒資料時用同樣大小顯示 `NONE`／`無數據`，不要換成不同字級的說明文字，空的提示行也要保留位置。新增欄位時照這個做。
   - 衣物名稱等長文字用 `…` 截斷（`title` 顯示全名），不要讓按鈕被擠到下一排。
   - 空氣盒子超過 1 小時沒更新顯示「無數據」；衣服輪播到頭就停，不會繞回另一邊。
+- **衣物管理**：導覽列「衣物管理」包含 `/garments*` 和 `/sessions*`。衣物的名稱、樣式、顏色、材質只在衣物詳細頁編輯（總覽的「編輯衣物」會跳過去）；晾衣中的衣物改了樣式或材質，存好後用 `swapGarment` 重算這次的預測。紀錄頁的曲線用 `components/clothes/RawCharts.vue`、拖曳選取用 `composables/useRangeSelect.ts`（衣夾詳細頁也用同一份），資料用 `useClothesData.ts` 的 `fetchRawHistory`／`downloadRawCsv`，不碰衣夾詳細頁共用的範圍。原始資料只來自實際衣夾，示範紀錄沒有曲線，顯示說明。
 - **字級一律用 rem**，不要寫死 px（Chart.js 的 canvas 字和 SVG 的 `font-size` 屬性例外）。
-- 頁面：`/` 總覽、`/start` 開始晾衣、`/devices` 設備狀況（含空氣盒子清單）、`/clips/:id` 衣夾詳細、`/sessions` 晾衣紀錄、`/devices/:id` 空氣盒子詳細、`/history` 空氣歷史、`/settings`。`/air` 和 `/login` 會轉址。
+- 頁面：`/` 總覽、`/start` 開始晾衣、`/devices` 設備狀況（含空氣盒子清單）、`/clips/:id` 衣夾詳細、`/garments` 衣物管理（新增、刪除）、`/garments/:id` 衣物詳細（樣式設定、這件的紀錄）、`/sessions` 全部晾衣紀錄、`/sessions/:id` 單筆紀錄（感測曲線、CSV、改衣物、刪除）、`/sessions/:id/time` 修改紀錄時間（在曲線上拖曳，圖表最長 2 天）、`/weather` 戶外天氣、`/devices/:id` 空氣盒子詳細、`/history` 空氣歷史、`/settings`。`/air` 和 `/login` 會轉址。
 - 前端沒有登入功能。後端的 `/api/v1/auth` 還在，但前端沒用到。
 
 ## 容易踩的坑
@@ -113,4 +115,4 @@ make smoke       # 整合測試，需要 tools/config.json，會寫入測試資�
 - 衣夾-01 沒在送資料時顯示離線，「開始晾衣」不能選它。沒有板子時先 `make sim`。
 - 舊資料庫的衣夾、衣物、晾衣如果還是文字 id（`c1`、`g_xxx`），app 啟動時會自動轉成 UUID（`convertTextIds()`，只跑一次，關聯和衣夾-01 的設定都保留）。
 - Bun SQL 傳字串參數給 uuid 欄位時，查詢裡要寫 `${id}::uuid`。
-- 示範開關開著卻沒有任何示範資料：還沒執行過 `make seed`（或到晾衣紀錄頁按「建立示範資料」）。
+- 示範開關開著卻沒有任何示範資料：還沒執行過 `make seed`（或到全部晾衣紀錄頁按「建立示範資料」）。

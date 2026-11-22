@@ -1,8 +1,9 @@
 // /api/v1/clothes/{clips,garments,sessions}: per-clip settings, garment library and drying sessions.
 import { Hono, type Context } from 'hono';
 import {
-  HttpError, createGarment, deleteClip, endSession, listActiveSessions, listClips, listGarments, listRecords, parseClipPatch,
-  parseDemoQuery, parseGarment, parseGarmentId, parseNewGarment, parseOutcome, parseStart, startSession, swapGarment, updateClip, updateGarment,
+  HttpError, createGarment, deleteClip, deleteGarment, deleteRecord, endSession, getSession, listActiveSessions, listClips, listGarments,
+  listRecords, parseClipPatch, parseDemoQuery, parseGarment, parseGarmentId, parseNewGarment, parseOutcome, parseRecordPatch, parseStart,
+  startSession, swapGarment, updateClip, updateGarment, updateRecord,
 } from '../clothes/drying';
 import { resetDemoData } from '../clothes/demo';
 import { clothesAirboxId } from '../clothes/store';
@@ -61,6 +62,12 @@ dryingRoute.patch('/garments/:id', (c) => handle(c, '資料庫無法寫入，衣
   return c.json({ success: true, garment: await updateGarment(c.req.param('id'), patch) });
 }));
 
+// Only garments without any session can be removed (409 otherwise).
+dryingRoute.delete('/garments/:id', (c) => handle(c, '資料庫無法寫入，衣物沒有刪除', async () => {
+  await deleteGarment(c.req.param('id'));
+  return c.json({ success: true });
+}));
+
 // ===== Sessions =====
 dryingRoute.get('/sessions/active', (c) => handle(c, '資料庫無法讀取，晾衣中清單暫時不可用', async () =>
   c.json({ success: true, sessions: await listActiveSessions(includeDemo(c)) })));
@@ -95,6 +102,21 @@ dryingRoute.get('/sessions', (c) => handle(c, '資料庫無法讀取，晾衣紀
   const limit = Number(limitText);
   if (!/^\d+$/.test(limitText) || limit < 1 || limit > 1000) throw new HttpError(400, 'limit 必須為 1～1000');
   return c.json({ success: true, ...(await listRecords(start, end, limit, includeDemo(c))) });
+}));
+
+// One session, drying or ended. Registered after /sessions/active so that path keeps its meaning.
+dryingRoute.get('/sessions/:id', (c) => handle(c, '資料庫無法讀取，晾衣紀錄暫時不可用', async () =>
+  c.json({ success: true, session: await getSession(c.req.param('id')) })));
+
+// Ended records only: move to another garment and/or correct the times.
+dryingRoute.patch('/sessions/:id', (c) => handle(c, '資料庫無法寫入，晾衣紀錄沒有更新', async () => {
+  const patch = parseRecordPatch(await jsonBody(c));
+  return c.json({ success: true, session: await updateRecord(c.req.param('id'), patch, new Date()) });
+}));
+
+dryingRoute.delete('/sessions/:id', (c) => handle(c, '資料庫無法寫入，晾衣紀錄沒有刪除', async () => {
+  await deleteRecord(c.req.param('id'));
+  return c.json({ success: true });
 }));
 
 // ===== Demo data =====

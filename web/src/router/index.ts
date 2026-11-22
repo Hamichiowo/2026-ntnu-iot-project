@@ -3,6 +3,10 @@ import OverviewView from '../views/OverviewView.vue';
 import DevicesView from '../views/DevicesView.vue';
 import ClipDetailView from '../views/ClipDetailView.vue';
 import SessionsView from '../views/SessionsView.vue';
+import GarmentsView from '../views/GarmentsView.vue';
+import GarmentDetailView from '../views/GarmentDetailView.vue';
+import SessionDetailView from '../views/SessionDetailView.vue';
+import SessionTimeEditView from '../views/SessionTimeEditView.vue';
 import StartFlowView from '../views/StartFlowView.vue';
 import HistoryView from '../views/HistoryView.vue';
 import DeviceDetailView from '../views/DeviceDetailView.vue';
@@ -18,7 +22,12 @@ const routes = [
   { path: '/start', name: 'StartFlow', component: StartFlowView },
   { path: '/devices', name: 'Devices', component: DevicesView },
   { path: '/clips/:id', name: 'ClipDetail', component: ClipDetailView },
+  // 衣物管理：衣物列表 → 衣物詳細；全部晾衣紀錄 → 單筆紀錄
+  { path: '/garments', name: 'Garments', component: GarmentsView },
+  { path: '/garments/:id', name: 'GarmentDetail', component: GarmentDetailView },
   { path: '/sessions', name: 'Sessions', component: SessionsView },
+  { path: '/sessions/:id', name: 'SessionDetail', component: SessionDetailView },
+  { path: '/sessions/:id/time', name: 'SessionTimeEdit', component: SessionTimeEditView },
   { path: '/weather', name: 'Weather', component: WeatherView },
   // 空氣盒子（MAPS）：清單併入設備狀況
   { path: '/devices/:id', name: 'DeviceDetail', component: DeviceDetailView },

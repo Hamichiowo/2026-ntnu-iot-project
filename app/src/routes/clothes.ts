@@ -106,6 +106,8 @@ clothesRoute.get('/export', async (c) => {
   } });
 });
 
+// Two days, so a drying record and the margin around it fit in one chart (the time editor).
+export const HISTORY_MAX_HOURS = 48;
 clothesRoute.get('/history', async (c) => {
   const now = new Date();
   const startText = c.req.query('start');
@@ -116,8 +118,8 @@ clothesRoute.get('/history', async (c) => {
   const limit = Number(limitText);
   if (!/^\d+$/.test(limitText) || !Number.isInteger(limit) || limit < 1 || limit > 5000 ||
       !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end ||
-      end.getTime() - start.getTime() > 24 * 60 * 60000) {
-    return c.json({ success: false, error: '時間範圍最多24小時，limit 必須為1～5000' }, 400);
+      end.getTime() - start.getTime() > HISTORY_MAX_HOURS * 60 * 60000) {
+    return c.json({ success: false, error: `時間範圍最多${HISTORY_MAX_HOURS}小時，limit 必須為1～5000` }, 400);
   }
   try {
     const airboxId = await chosenAirbox(c.req.query('airbox'), c.req.query('clip'));

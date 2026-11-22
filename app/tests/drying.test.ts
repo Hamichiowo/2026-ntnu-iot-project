@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { Hono } from 'hono';
 import { clothesRoute } from '../src/routes/clothes';
-import { HttpError, parseGarment, parseOutcome, parseStart } from '../src/clothes/drying';
+import { HttpError, checkRecordTimes, parseGarment, parseOutcome, parseRecordPatch, parseStart } from '../src/clothes/drying';
 import { BASE_MINUTES, predictMinutes, swappedPrediction } from '../src/clothes/prediction';
 import { isUuid } from '../src/clothes/store';
 
@@ -51,6 +51,19 @@ describe('Drying body validation', () => {
       expect(status(() => parseStart(body))).toBe(400);
     }
   });
+  it('corrects an ended record: garment and/or times, at most two days', () => {
+    const start = '2026-01-01T00:00:00.000Z', end = '2026-01-01T03:00:00.000Z';
+    expect(parseRecordPatch({ garment_id: GARMENT })).toEqual({ garment_id: GARMENT });
+    expect(parseRecordPatch({ started_at: start, ended_at: end })).toEqual({ started_at: new Date(start), ended_at: new Date(end) });
+    expect(parseRecordPatch({ ended_at: end })).toEqual({ ended_at: new Date(end) });
+    for (const body of [{}, [], { garment_id: 'g_1' }, { started_at: 'bad' }, { started_at: 1 }, { outcome: 'dry' },
+      { started_at: end, ended_at: start }, { started_at: start, ended_at: start },
+      { started_at: start, ended_at: '2026-01-03T00:00:01.000Z' }]) {
+      expect(status(() => parseRecordPatch(body))).toBe(400);
+    }
+    expect(status(() => checkRecordTimes(new Date(start), new Date('2026-01-03T00:00:00.000Z')))).toBe(0);
+    expect(status(() => checkRecordTimes(new Date(start), new Date(end), new Date('2026-01-01T02:00:00.000Z')))).toBe(400);
+  });
   it('only ends a session as dry, early or cancel', () => {
     expect(parseOutcome({ outcome: 'early' })).toBe('early');
     expect(status(() => parseOutcome({ outcome: 'done' }))).toBe(400);
@@ -69,6 +82,10 @@ describe('Drying API without a database', () => {
     expect((await send('POST', '/clothes/garments', garment)).status).toBe(503);
     expect((await send('POST', '/clothes/sessions', { clip_id: CLIP, garment_id: GARMENT })).status).toBe(503);
     expect((await send('POST', `/clothes/sessions/${SESSION}/end`, { outcome: 'dry' })).status).toBe(503);
+    expect((await app.request(`/clothes/sessions/${SESSION}`)).status).toBe(503);
+    expect((await send('PATCH', `/clothes/sessions/${SESSION}`, { garment_id: GARMENT })).status).toBe(503);
+    expect((await send('DELETE', `/clothes/sessions/${SESSION}`)).status).toBe(503);
+    expect((await send('DELETE', `/clothes/garments/${GARMENT}`)).status).toBe(503);
   });
   it('rejects bad input before touching the database', async () => {
     expect((await send('POST', '/clothes/garments', { name: 'x' })).status).toBe(400);
@@ -76,11 +93,16 @@ describe('Drying API without a database', () => {
     expect((await send('PATCH', `/clothes/sessions/${SESSION}/garment`, {})).status).toBe(400);
     expect((await send('PATCH', `/clothes/sessions/${SESSION}/garment`, { garment_id: 'g_1' })).status).toBe(400);
     expect((await send('POST', `/clothes/sessions/${SESSION}/end`, { outcome: 'later' })).status).toBe(400);
+    expect((await send('PATCH', `/clothes/sessions/${SESSION}`, { outcome: 'dry' })).status).toBe(400);
   });
   it('answers 404 for ids that are not UUIDs, without touching the database', async () => {
     expect((await send('POST', '/clothes/sessions/s_1/end', { outcome: 'dry' })).status).toBe(404);
     expect((await send('PATCH', '/clothes/sessions/s_1/garment', { garment_id: GARMENT })).status).toBe(404);
     expect((await send('PATCH', '/clothes/garments/g_1', { name: '新名字' })).status).toBe(404);
+    expect((await send('DELETE', '/clothes/garments/g_1')).status).toBe(404);
+    expect((await app.request('/clothes/sessions/s_1')).status).toBe(404);
+    expect((await send('PATCH', '/clothes/sessions/s_1', { garment_id: GARMENT })).status).toBe(404);
+    expect((await send('DELETE', '/clothes/sessions/s_1')).status).toBe(404);
     for (const query of ['limit=0', 'limit=1001', 'start=bad', 'start=2026-01-02&end=2026-01-01']) {
       expect((await app.request(`/clothes/sessions?${query}`)).status).toBe(400);
     }
