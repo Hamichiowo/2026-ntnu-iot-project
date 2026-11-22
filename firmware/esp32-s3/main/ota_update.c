@@ -1,8 +1,8 @@
 // Over-the-air update.
-// The server leaves a retained command on "<topic>/ota":
+// The server leaves a retained command on "clothes/<id>/ota" (<id> = this board's MAC):
 //   {"sha":"<64 hex, ELF SHA-256 of the image>","size":N,"port":P,"path":"/api/...?token=..."}
 // The image is fetched with plain HTTP from the MQTT host on that port. The board reports on
-// "<topic>/fw": {"version","sha","state":"running"|"downloading"|"failed","progress","target","detail"}.
+// "clothes/<id>/fw": {"version","sha","state":"running"|"downloading"|"failed","progress","target","detail"}.
 // A new image that cannot deliver one report before its first deep sleep is rolled back by the
 // bootloader (CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE).
 #include <stdio.h>

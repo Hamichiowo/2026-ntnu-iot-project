@@ -14,7 +14,7 @@
 #define APP_MQTT_TLS        0  // Set 1 for TLS (normally port 8883); CA bundle + hostname verified.
 #define APP_MQTT_USERNAME   ""  // Empty = no username
 #define APP_MQTT_PASSWORD   ""
-#define APP_MQTT_TOPIC      "clothes/raw"
+// No topic to set: the board publishes to clothes/<its MAC>/raw and the server registers it on its first report.
 
 // TLS needs network time to validate the broker certificate. No time is added to payloads.
 #define APP_SNTP_SERVER     "pool.ntp.org"
