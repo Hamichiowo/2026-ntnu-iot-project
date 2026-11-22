@@ -202,10 +202,7 @@ export async function sessionMiddleware(context: Context, next: Next) {
 }
 
 function clientKey(context: Context): string {
-  return context.req.header('CF-Connecting-IP')
-    || context.req.header('X-Real-IP')
-    || context.req.header('X-Forwarded-For')?.split(',')[0]?.trim()
-    || 'unknown';
+  return context.req.header('X-Real-IP') || 'unknown';
 }
 
 function pruneAttempts(now = Date.now()) {
@@ -222,7 +219,7 @@ export function loginAllowed(context: Context): { allowed: boolean; retryAfter: 
   return { allowed: false, retryAfter: Math.ceil((attempt.blockedUntil - now) / 1000) };
 }
 
-export function recordLoginFailure(context: Context) {
+export function recordLoginAttempt(context: Context) {
   const now = Date.now();
   const key = clientKey(context);
   const previous = loginAttempts.get(key);

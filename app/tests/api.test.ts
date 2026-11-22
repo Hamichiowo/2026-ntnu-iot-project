@@ -37,7 +37,7 @@ describe('REST API Routes', () => {
   }
 
   it('GET /api/v1/system/health should return ok status', async () => {
-    const res = await app.request('/api/v1/system/health');
+    const res = await authenticatedRequest('/api/v1/system/health');
     expect(res.status).toBe(200);
 
     const data = await json<{ status: string; services: object }>(res);

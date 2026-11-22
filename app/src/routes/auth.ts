@@ -9,7 +9,7 @@ import {
   destroySession,
   loginAllowed,
   readSession,
-  recordLoginFailure,
+  recordLoginAttempt,
   verifyAdminCredentials,
 } from '../auth/session';
 
@@ -30,6 +30,7 @@ authRoute.post('/login', async (c) => {
   }
   const body = await c.req.json().catch(() => ({}));
   const { username, password } = body;
+  recordLoginAttempt(c);
   if (typeof username === 'string' && typeof password === 'string'
     && username.length <= 128 && password.length <= 1024
     && await verifyAdminCredentials(username, password)) {
@@ -42,7 +43,6 @@ authRoute.post('/login', async (c) => {
       expiresAt: session.expiresAt,
     });
   }
-  recordLoginFailure(c);
   return c.json({ success: false, error: '帳號或密碼錯誤' }, 401);
 });
 
