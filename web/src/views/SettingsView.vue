@@ -6,6 +6,23 @@
     </div>
 
     <div class="settings-grid">
+      <!-- Demo data -->
+      <div class="card">
+        <h3 class="section-title">示範資料</h3>
+        <label class="switch-row" for="demo-switch">
+          <span>顯示示範資料</span>
+          <input id="demo-switch" class="switch" type="checkbox" role="switch" :checked="demoEnabled" :disabled="saving"
+            @change="toggleDemo($event.target as HTMLInputElement)" />
+        </label>
+        <p class="switch-note">
+          {{ demoEnabled
+            ? '目前一起顯示示範的衣夾-02～08、衣物、晾衣紀錄與天氣，並標上「示範」；統計只算實際資料。關閉後只留下實際的資料。'
+            : '目前只顯示實際的衣夾、衣物與晾衣紀錄。示範資料仍保留在伺服器，重新開啟就會回來。' }}
+        </p>
+        <p v-if="demoError || settingsError" class="ui-note ui-note--error" role="alert">{{ demoError || settingsError }}</p>
+        <p class="switch-note muted">這個開關、衣物與晾衣紀錄都存在伺服器，所有瀏覽器都一樣。示範資料以 is_demo 標記，第一次使用請執行 make seed 建立。</p>
+      </div>
+
       <!-- Health Card -->
       <div class="card">
         <h3 class="section-title">服務健康檢測</h3>
@@ -82,6 +99,25 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { useClothesMock } from '../composables/useClothesMock';
+import { useSettings } from '../composables/useSettings';
+
+const { demoEnabled, setDemoEnabled } = useClothesMock();
+const { settingsError } = useSettings();
+const saving = ref(false);
+const demoError = ref('');
+
+// The switch only moves once the server has stored the setting.
+async function toggleDemo(input: HTMLInputElement) {
+  const wanted = input.checked;
+  saving.value = true; demoError.value = '';
+  try { await setDemoEnabled(wanted); } catch (err) {
+    demoError.value = (err as Error).message;  // the server says what was not stored
+  } finally {
+    saving.value = false;
+    input.checked = demoEnabled.value;
+  }
+}
 
 const health = ref<any>({});
 const stats = ref<any>({});
@@ -113,12 +149,12 @@ onMounted(() => {
 }
 
 .page-title {
-  font-size: 24px;
+  font-size: 1.5rem;
   font-weight: 700;
 }
 
 .page-desc {
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--color-body);
 }
 
@@ -129,7 +165,7 @@ onMounted(() => {
 }
 
 .section-title {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 600;
   margin-bottom: 16px;
 }
@@ -144,7 +180,7 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 14px;
+  font-size: 0.875rem;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--color-hairline);
 }
@@ -156,4 +192,53 @@ onMounted(() => {
 .font-mono {
   font-family: var(--font-mono);
 }
+
+.switch-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  min-height: 44px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.switch-note {
+  margin-top: 8px;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--tx2);
+}
+
+.switch-note.muted { color: var(--mu); }
+
+/* Native checkbox drawn as a switch; keyboard and screen readers keep working. */
+.switch {
+  appearance: none;
+  flex: 0 0 auto;
+  position: relative;
+  width: 48px;
+  height: 28px;
+  margin: 0;
+  border-radius: 14px;
+  background: var(--bd2);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--tx);
+  transition: transform 0.2s;
+}
+
+.switch:checked { background: var(--ac); }
+.switch:checked::after { transform: translateX(20px); background: var(--bg); }
+.switch:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
 </style>
