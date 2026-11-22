@@ -35,6 +35,8 @@ const props = defineProps<{
   now: number;
   moistNow: number;          // remaining moisture % at `now`
   dryTime: number | null;    // when it should reach the dry threshold, null = unknown
+  // Moisture at any time (demo sessions: the simulated curve). Without it the curve is a smooth guess.
+  moistAt?: (t: number) => number;
 }>();
 
 const { palette } = useTheme();
@@ -55,11 +57,11 @@ const ease = (x: number) => 1 - (1 - Math.max(0, Math.min(1, x))) ** 1.6;
 const measured = computed(() => {
   const out: { t: number; m: number }[] = [];
   const from = Math.max(props.startedAt, window.value.t0);
-  const steps = 24;
+  const steps = props.moistAt ? 60 : 24;
   for (let i = 0; i <= steps; i++) {
     const t = from + ((props.now - from) * i) / steps;
     const x = props.now > props.startedAt ? (t - props.startedAt) / (props.now - props.startedAt) : 1;
-    out.push({ t, m: 100 - (100 - props.moistNow) * ease(x) });
+    out.push({ t, m: props.moistAt ? props.moistAt(t) : 100 - (100 - props.moistNow) * ease(x) });
   }
   return out;
 });
@@ -73,6 +75,7 @@ const predicted = computed(() => {
   for (let i = 0; i <= steps; i++) {
     const t = props.now + ((end - props.now) * i) / steps;
     const x = (t - props.now) / span;
+    if (props.moistAt) { out.push({ t, m: props.moistAt(t) }); continue; }
     const target = x <= 1 ? props.moistNow - (props.moistNow - DRY_THRESHOLD) * ease(x) : DRY_THRESHOLD * Math.max(0, 1 - (x - 1) * 0.8);
     out.push({ t, m: Math.max(0, target) });
   }

@@ -160,7 +160,8 @@
           </div>
         </div>
         <div v-if="cur.moist != null" class="curve-scroll">
-          <DryingCurve :started-at="cur.session.startedAt" :now="mock.now.value" :moist-now="cur.moist" :dry-time="cur.dryTime" />
+          <DryingCurve :started-at="cur.session.startedAt" :now="mock.now.value" :moist-now="cur.moist" :dry-time="cur.dryTime"
+            :moist-at="cur.session.demo ? moistureCurve(cur.session) : undefined" />
         </div>
         <div v-else class="no-curve">
           <p>{{ cur.clip.name }} 的剩餘水分尚未實作，目前沒有乾燥曲線；預計乾燥時間是依這件衣物過去的乾燥時間（沒有紀錄時用材質）估算。三個感測器的原始值曲線可以到衣夾詳細查看。</p>
@@ -256,7 +257,7 @@ import AirboxSelect from '../components/clothes/AirboxSelect.vue';
 import { BASE_MINUTES, SHAPES, type Material } from '../constants/garments';
 import { useTheme } from '../composables/useTheme';
 import { useClothesLive } from '../composables/useClothesData';
-import { dryAt, moistureAt, useClothesMock } from '../composables/useClothesMock';
+import { dryAt, moistureAt, moistureCurve, useClothesMock } from '../composables/useClothesMock';
 import { useOutdoorWeather } from '../composables/useOutdoorWeather';
 import { DAY_MS, TAIPEI_MS, clock, dayLabel, formatAir, minutesText, shortDuration } from '../utils/format';
 

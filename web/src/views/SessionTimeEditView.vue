@@ -38,14 +38,14 @@
           </template>
         </section>
 
-        <template v-if="!detail.demo">
+        <template v-if="detail">
           <div v-if="!history?.records.length" class="panel empty">
             <strong>{{ historyLoading ? '正在讀取感測資料…' : '這段時間沒有感測資料' }}</strong>
             <p class="muted">可以把圖表範圍拉大，或直接在右邊輸入時間。</p>
           </div>
           <RawCharts v-else :records="history.records" :air-records="history.air" :range="win" :stale-after-ms="history.staleAfterMs"
             :bucket-seconds="history.bucketSeconds" :air-device-id="history.airDeviceId" :plugins="[selectPlugin]"
-            :dividers="detail ? mock.clipById(detail.clipId)?.dividers : null" />
+            :dividers="detail.demo ? demoDividers(detail.clipId) : mock.clipById(detail.clipId)?.dividers" />
         </template>
       </div>
 
@@ -78,6 +78,7 @@ import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import DemoTag from '../components/clothes/DemoTag.vue';
 import RawCharts from '../components/clothes/RawCharts.vue';
+import { demoDividers, demoHistory } from '../utils/demoSensor';
 import { HISTORY_MAX_MS, fetchRawHistory, type RawHistory } from '../composables/useClothesData';
 import { useClothesMock, type SessionDetail } from '../composables/useClothesMock';
 import { dryingApi } from '../composables/useDrying';
@@ -147,9 +148,15 @@ function applyWindow() {
 const history = ref<RawHistory | null>(null);
 const historyError = ref('');
 const historyLoading = ref(false);
+// Demo records have no real readings: their curves come from the generator (utils/demoSensor.ts).
+function demoHistoryFor(clipId: string, start: Date, end: Date): RawHistory {
+  const sim = demoHistory(clipId, mock.demoSessionsOf(clipId), start.getTime(), end.getTime());
+  return { records: sim.records, air: [], airDeviceId: null, bucketSeconds: sim.bucketSeconds, staleAfterMs: 3 * 60000 };
+}
 let historyRequest = 0;
 async function loadHistory() {
-  if (!detail.value || detail.value.demo) return;
+  if (!detail.value) return;
+  if (detail.value.demo) { history.value = demoHistoryFor(detail.value.clipId, win.value.start, win.value.end); return; }
   const request = ++historyRequest;
   historyLoading.value = true;
   try {

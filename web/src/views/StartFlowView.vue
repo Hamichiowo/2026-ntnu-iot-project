@@ -15,7 +15,8 @@
       <div class="stage">
         <div class="preview">
           <svg class="line" aria-hidden="true" width="100%" height="60" viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M0,15 Q50,30 100,15" fill="none" :stroke="palette.tx2" stroke-width="2.5" vector-effect="non-scaling-stroke" /></svg>
-          <GarmentFigure uid="start" :garment="chosen" :label="chosen ? `預覽：${chosen.name}` : '尚未選擇衣物'" />
+          <GarmentFigure uid="start" :garment="chosen" :moist="clip?.demo && chosen ? 100 - dryness : undefined"
+            :label="chosen ? `預覽：${chosen.name}` : '尚未選擇衣物'" />
           <p class="caption">{{ caption }}</p>
         </div>
 
@@ -57,6 +58,14 @@
               <p class="ui-note ui-note--info">第一次晾的衣物還不知道乾燥時間，會先用材質估算，預測可能較不準；收衣後會自動記住。</p>
               <button type="button" class="ui-btn ui-btn--ghost start" @click="creating = false">← 改選晾過的衣物</button>
             </template>
+            <div v-if="clip?.demo" class="demo-dry">
+              <div class="demo-dry-head">
+                <label for="demo-dryness">這件衣服現在乾到幾 % <DemoTag /></label>
+                <b class="num">{{ dryness }}%</b>
+              </div>
+              <input id="demo-dryness" v-model.number="dryness" type="range" min="0" max="95" step="5" />
+              <p class="muted small">示範用：開始後會假裝衣服已經晾了一段時間、現在剛好乾到這個程度，所以馬上就有前面的感測曲線。每次產生的曲線都不太一樣。</p>
+            </div>
           </div>
 
           <!-- step 3 -->
@@ -66,6 +75,11 @@
               <div><dt>衣夾</dt><dd>{{ clip?.name }}</dd></div>
               <div><dt>衣物</dt><dd>{{ chosen?.name }}</dd></div>
               <div><dt>預計乾燥</dt><dd>約 {{ minutesText(predicted) }}</dd></div>
+              <template v-if="clip?.demo">
+                <div><dt>乾燥程度 <DemoTag /></dt><dd>{{ dryness }}%（剩餘水分 {{ 100 - dryness }}%）</dd></div>
+                <div><dt>已晾時間 <DemoTag /></dt><dd>{{ demoElapsed ? `約 ${minutesText(demoElapsed)}` : '剛晾上去' }}</dd></div>
+                <div><dt>預計還要</dt><dd>約 {{ minutesText(Math.max(0, predicted - demoElapsed)) }}</dd></div>
+              </template>
             </dl>
             <div class="ui-field">
               <label for="start-airbox">室內環境來自</label>
@@ -99,6 +113,7 @@ import AirboxSelect from '../components/clothes/AirboxSelect.vue';
 import { useClothesLive } from '../composables/useClothesData';
 import { useClothesMock, type GarmentDraft } from '../composables/useClothesMock';
 import { agoText, minutesText } from '../utils/format';
+import { randomSeed, tauForDryness } from '../utils/demoSensor';
 
 const router = useRouter();
 const { palette } = useTheme();
@@ -156,6 +171,12 @@ const draftTaken = computed(() => creating.value && mock.garmentNameTaken(draft.
 const canNext = computed(() => (step.value === 1 && !!clip.value)
   || (step.value === 2 && (creating.value ? draft.value.name.trim().length > 0 && !draftTaken.value : !!garmentId.value)));
 
+// Demo clips: how dry the garment already is. The session gets a fresh seed for its simulated
+// curves and starts as long ago as that seed's curve needs to reach this dryness.
+const dryness = ref(0);
+const demoSeed = ref(randomSeed());
+const demoElapsed = computed(() => clip.value?.demo ? Math.round(tauForDryness(demoSeed.value, dryness.value) * predicted.value) : 0);
+
 // Goes to the overview only once the server has stored the session; otherwise the error shows here.
 const starting = ref(false);
 async function start() {
@@ -163,7 +184,8 @@ async function start() {
   const target = creating.value ? { ...draft.value, name: draft.value.name.trim() } : garmentId.value ? { id: garmentId.value } : null;
   if (!target) return;
   starting.value = true;
-  const session = await mock.startSession(clipId.value, target);
+  const demo = clip.value?.demo ? { seed: demoSeed.value, elapsed_min: Math.min(demoElapsed.value, 7 * 1440) } : undefined;
+  const session = await mock.startSession(clipId.value, target, demo);
   starting.value = false;
   if (session) void router.push('/');
 }
@@ -199,6 +221,13 @@ async function start() {
 .tag { font-size: 0.875rem; color: var(--tx2); }
 .library { display: flex; flex-direction: column; gap: 8px; max-height: 380px; overflow-y: auto; }
 .start { align-self: flex-start; }
+.demo-dry { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 12px; border: 1px dashed var(--bd2); background: var(--sf); }
+.demo-dry-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.demo-dry-head label { font-weight: 700; display: inline-flex; align-items: center; gap: 8px; }
+.demo-dry-head b { font-size: 1.5rem; }
+.demo-dry input { width: 100%; accent-color: var(--ac); }
+.small { font-size: 0.875rem; }
+.summary dt { display: inline-flex; align-items: center; gap: 6px; }
 .summary { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 12px; background: var(--sf); }
 .summary div { display: flex; justify-content: space-between; gap: 12px; }
 .summary dt { color: var(--mu); }

@@ -23,10 +23,11 @@
       <p v-if="(device.live && data.clipSettingError.value) || mock.actionError.value" class="ui-note ui-note--error" role="alert">{{ mock.actionError.value || data.clipSettingError.value }}</p>
     </div>
 
-    <!-- ================= real clip ================= -->
-    <template v-if="device.live">
-      <p v-if="error" class="ui-note ui-note--error" role="alert">{{ error }}　畫面保留最後成功取得的資料。</p>
-      <p v-if="ingestionError" class="ui-note ui-note--error" role="alert">資料寫入失敗，請檢查後端與資料庫。</p>
+    <!-- Real clips read the server; demo clips show simulated readings (utils/demoSensor.ts). -->
+    <template v-if="device">
+      <p v-if="device.demo" class="ui-note ui-note--info">這是示範衣夾，沒有實體感測器。以下讀值與曲線是依五次真實晾衣實驗模擬的，每一次晾衣都不太一樣。</p>
+      <p v-if="!device.demo && error" class="ui-note ui-note--error" role="alert">{{ error }}　畫面保留最後成功取得的資料。</p>
+      <p v-if="!device.demo && ingestionError" class="ui-note ui-note--error" role="alert">資料寫入失敗，請檢查後端與資料庫。</p>
 
       <div class="layout">
         <div class="main-col">
@@ -47,8 +48,8 @@
             <p class="muted hint">各感測器使用獨立刻度；缺值或資料中斷顯示為斷線。按住曲線拖曳可選取時段，再按「放大」只看那一段。</p>
             <p v-if="rangeError" class="ui-note ui-note--error" role="alert">{{ rangeError }}</p>
             <p v-if="historyError" class="ui-note ui-note--error" role="alert">{{ historyError }}</p>
-            <p v-if="truncated" class="ui-note">資料較多，目前顯示最近 5,000 筆。</p>
-            <p v-if="bucketSeconds" class="ui-note">範圍較長，曲線以每 {{ bucketSeconds }} 秒的平均值顯示。</p>
+            <p v-if="!device.demo && truncated" class="ui-note">資料較多，目前顯示最近 5,000 筆。</p>
+            <p v-if="shown.bucket" class="ui-note">範圍較長，曲線以每 {{ shown.bucket }} 秒的平均值顯示。</p>
             <div v-if="selection" class="sel-row">
               <span class="ac-tx">已選取 {{ pickedText(selection) }}</span>
               <button type="button" class="ui-btn" @click="zoomToSelection">放大到選取範圍</button>
@@ -56,19 +57,19 @@
             </div>
           </section>
 
-          <div v-if="!records.length" class="panel empty">
-            <strong>{{ historyLoading ? '正在讀取歷史資料…' : '這段時間還沒有資料' }}</strong>
+          <div v-if="!shown.records.length" class="panel empty">
+            <strong>{{ historyLoading && !device.demo ? '正在讀取歷史資料…' : '這段時間還沒有資料' }}</strong>
             <p class="muted">衣夾送出資料並成功儲存後，曲線會自動出現。</p>
           </div>
 
           <template v-else>
-            <RawCharts :records="records" :air-records="airRecords" :range="range" :stale-after-ms="staleAfterMs" :bucket-seconds="bucketSeconds"
-              :sensors="orderedSensors" :chosen="method" :latest="latest" :air-device-id="air?.device_id" :plugins="[selectPlugin]"
-              :dividers="device.dividers" />
+            <RawCharts :records="shown.records" :air-records="shown.air" :range="range" :stale-after-ms="staleAfterMs" :bucket-seconds="shown.bucket"
+              :sensors="orderedSensors" :chosen="method" :latest="shown.latest" :air-device-id="device.demo ? null : air?.device_id" :plugins="[selectPlugin]"
+              :dividers="shown.dividers" />
           </template>
 
           <p class="muted small">
-            {{ formatTime(range.start) }} – {{ formatTime(range.end) }} · 已載入 {{ records.length.toLocaleString() }} 筆 ·
+            {{ formatTime(range.start) }} – {{ formatTime(range.end) }} · {{ device.demo ? '模擬' : '已載入' }} {{ shown.records.length.toLocaleString() }} 筆 ·
             {{ mode === 'custom' ? '自訂時間不自動更新' : `歷史曲線每 ${refreshSeconds} 秒更新` }}
           </p>
         </div>
@@ -77,10 +78,14 @@
           <section class="panel panel--sm">
             <h2>最新訊息</h2>
             <pre class="json mono">{{ latestJson }}</pre>
-            <span class="muted small">{{ latest ? `${formatTime(latest.timestamp)} 收到` : '尚未收到資料' }}</span>
+            <span class="muted small">{{ shown.latest ? `${formatTime(shown.latest.timestamp)} ${device.demo ? '（模擬）' : '收到'}` : '尚未收到資料' }}</span>
           </section>
 
-          <section class="panel panel--sm">
+          <section v-if="device.demo" class="panel panel--sm">
+            <h2>匯出原始資料</h2>
+            <p class="muted small">示範衣夾沒有真的原始資料，所以不提供匯出。</p>
+          </section>
+          <section v-else class="panel panel--sm">
             <h2>匯出原始資料</h2>
             <p class="muted small">匯出歷史曲線目前的時間範圍：<b class="tx">{{ exportRangeText }}</b>。要匯出其他時段，先在左邊換時間範圍或拖曳放大。</p>
             <p class="muted small">原始資料（不平均），附電阻歐姆值與空氣盒子溫濕度，台北時間。</p>
@@ -88,7 +93,7 @@
             <p v-if="exportMessage" class="small" :class="exportFailed ? 'err' : 'ac-tx'" role="status">{{ exportMessage }}</p>
           </section>
 
-          <form class="panel panel--sm" @submit.prevent="saveDivider">
+          <form v-if="!device.demo" class="panel panel--sm" @submit.prevent="saveDivider">
             <h2>電阻換算</h2>
             <template v-if="currentDivider">
               <dl class="kv">
@@ -132,64 +137,27 @@
         </aside>
       </div>
 
-      <p class="demo-note">重量與電容為感測器直接讀值，尚未換算；電阻在設定分壓電阻後換算成歐姆。乾燥預測之後會依選擇的衣物計算，目前尚未實作；「預測使用」的切換目前只影響顯示順序。</p>
+      <p v-if="device.demo" class="demo-note">示範資料：此衣夾的讀值、曲線與裝置資訊為前端模擬，依 11/14～11/20 五次真實晾衣實驗（當時 100 kΩ 分壓）換算成現在 1 MΩ 分壓的讀值；乾到約 3 MΩ 以上的部分是依趨勢延伸。</p>
+      <p v-else class="demo-note">重量與電容為感測器直接讀值，尚未換算；電阻在設定分壓電阻後換算成歐姆。乾燥預測之後會依選擇的衣物計算，目前尚未實作；「預測使用」的切換目前只影響顯示順序。</p>
     </template>
 
-    <!-- ================= demo clip ================= -->
-    <template v-else>
-      <p class="ui-note ui-note--info">這是示範衣夾，沒有連接實體感測器，以下數值與曲線為前端模擬。</p>
-      <div class="layout">
-        <div class="main-col">
-          <section v-for="s in orderedSensors" :key="s.key" class="panel sensor" :class="{ chosen: s.key === method }">
-            <div class="sensor-head">
-              <h2><i :style="{ background: palette[s.color] }"></i>{{ s.method }} <em v-if="s.key === method" class="chosen-tag">預測使用</em></h2>
-              <span class="reading num">{{ DEMO[s.key].value }}<small> {{ DEMO[s.key].unit }}</small></span>
-            </div>
-            <svg width="100%" height="140" viewBox="0 0 600 140" preserveAspectRatio="none" role="img" :aria-label="DEMO[s.key].aria" class="demo-chart">
-              <line v-if="s.key === 'hx711_raw'" x1="0" y1="116" x2="600" y2="116" :stroke="palette.mu" stroke-dasharray="5 5" vector-effect="non-scaling-stroke" />
-              <polyline :points="DEMO[s.key].points" fill="none" :stroke="palette[s.color]" stroke-width="3" vector-effect="non-scaling-stroke" />
-            </svg>
-            <div class="axis muted small"><span>{{ sessionStart }}</span><span v-if="s.key === 'hx711_raw'">虛線為乾布重量 381 g</span><span>現在</span></div>
-          </section>
-        </div>
-        <aside class="side-col">
-          <section v-if="device.issue && status.online" class="panel panel--sm warn-panel">
-            <h2>需要注意</h2>
-            <p>{{ device.issue }}</p>
-          </section>
-          <section class="panel panel--sm">
-            <h2>裝置</h2>
-            <dl class="kv">
-              <div><dt>晶片</dt><dd>{{ device.chip }}</dd></div>
-              <div><dt>IP</dt><dd class="mono">{{ device.ip ?? '—' }}</dd></div>
-              <div><dt>韌體</dt><dd>{{ device.fw ?? '—' }}</dd></div>
-              <div><dt>訊號</dt><dd>{{ status.online ? device.signal : '—' }}</dd></div>
-              <div><dt>MQTT topic</dt><dd class="mono">{{ device.topic }}</dd></div>
-              <div><dt>最後回報</dt><dd>{{ status.lastSeenMs == null ? '—' : agoText(status.lastSeenMs) }}</dd></div>
-            </dl>
-          </section>
-        </aside>
-      </div>
-      <p class="demo-note">示範資料：此衣夾的感測數值、曲線與裝置資訊為前端模擬。</p>
-    </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { useTheme } from '../composables/useTheme';
 import DemoTag from '../components/clothes/DemoTag.vue';
 import RawCharts from '../components/clothes/RawCharts.vue';
 import { useRangeSelect, type Picked } from '../composables/useRangeSelect';
 import { HISTORY_WINDOW_MAX_MS, PRESETS, SENSORS, selectClip, useClothesHistory, withClip, type Field } from '../composables/useClothesData';
 import { useClothesMock, type Method } from '../composables/useClothesMock';
 import { apiFetch } from '../composables/useAuth';
-import { agoText, clock, formatRaw, formatTime, fromTaipeiInput, toTaipeiInput } from '../utils/format';
+import { agoText, formatRaw, formatTime, fromTaipeiInput, toTaipeiInput } from '../utils/format';
 import { dividerAt, formatOhm, ohmMax, type Divider } from '../utils/resistance';
+import { demoDividers, demoHistory, demoLatest } from '../utils/demoSensor';
 
 const route = useRoute();
-const { palette } = useTheme();
 const mock = useClothesMock();
 const data = useClothesHistory();
 const {
@@ -210,9 +178,20 @@ function pickMethod(key: Method) {
 }
 const orderedSensors = computed(() => [...SENSORS].sort((a, b) => Number(b.key === method.value) - Number(a.key === method.value)));
 
-const latestJson = computed(() => latest.value
-  ? `{\n  "hx711_raw":   ${latest.value.hx711_raw ?? 'null'},\n  "ads1115_raw": ${latest.value.ads1115_raw ?? 'null'},\n  "touch_raw":   ${latest.value.touch_raw ?? 'null'}\n}`
-  : '—');
+// Where the readings come from: the server for a real clip, the generator for a demo clip.
+const shown = computed(() => {
+  const d = device.value;
+  if (d?.demo) {
+    const sessions = mock.demoSessionsOf(d.id);
+    const sim = demoHistory(d.id, sessions, range.value.start.getTime(), range.value.end.getTime(), mock.now.value);
+    return { records: sim.records, air: [], bucket: sim.bucketSeconds, latest: demoLatest(d.id, sessions, mock.now.value), dividers: demoDividers(d.id) };
+  }
+  return { records: records.value, air: airRecords.value, bucket: bucketSeconds.value, latest: latest.value, dividers: d?.dividers ?? [] };
+});
+const latestJson = computed(() => {
+  const r = shown.value.latest;
+  return r ? `{\n  "hx711_raw":   ${r.hx711_raw ?? 'null'},\n  "ads1115_raw": ${r.ads1115_raw ?? 'null'},\n  "touch_raw":   ${r.touch_raw ?? 'null'}\n}` : '—';
+});
 
 // ---------------------------------------------------------------- CSV export
 // Exports the window the charts show: a preset ("last hour") ends now, a custom window is fixed.
@@ -298,16 +277,6 @@ function removeDivider(d: Divider) {
   if (window.confirm(`刪除 ${formatTime(d.since)} 起的分壓設定？這段時間的資料會改用前一筆設定換算。`)) void mock.deleteDivider(device.value.id, d.id);
 }
 
-// ---------------------------------------------------------------- demo clip
-const DEMO: Record<Field, { value: string; unit: string; points: string; aria: string }> = {
-  hx711_raw: { value: '412', unit: 'g', points: '0,20 60,26 120,36 180,48 240,60 300,72 360,82 420,92 480,100 540,106 600,110', aria: '重量持續下降，接近乾布重量' },
-  ads1115_raw: { value: '2.0', unit: 'MΩ', points: '0,120 60,118 120,114 180,108 240,96 300,84 360,70 420,56 480,46 540,40 600,36', aria: '布料電阻隨變乾而上升' },
-  touch_raw: { value: '34,210', unit: '計數', points: '0,30 50,34 100,28 150,44 200,50 250,46 300,62 350,70 400,66 450,82 500,90 550,88 600,96', aria: '觸控計數隨水分減少而下降' },
-};
-const sessionStart = computed(() => {
-  const s = device.value && mock.state.sessions.find((x) => x.clipId === device.value!.id);
-  return s ? clock(s.startedAt) : '開始';
-});
 </script>
 
 <style scoped>
