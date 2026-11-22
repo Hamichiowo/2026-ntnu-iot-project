@@ -44,6 +44,12 @@ USB 監看時輸入 `setup` 加 Enter，也能開啟熱點並再次顯示熱點�
 
 ![手機設定頁預覽](../../docs/setup-portal-preview.png)
 
+## 衣夾編號與 topic
+
+每支衣夾用自己 ESP32 的 Wi-Fi MAC（12 碼，例如 `FC012CD245E0`）當編號，資料送到 `clothes/<編號>/raw`，不用設定 topic。開機時 USB 會印出編號，手機配網頁面的「伺服器設定」裡也看得到。伺服器收到新編號的第一筆資料，網頁上就會自動多一支衣夾。
+
+所以一支新衣夾只要設定 Wi-Fi 和 MQTT 主機（位址、port、帳號、密碼）就能用。
+
 ## 遠端更新韌體（OTA）
 
 在網頁「設備狀況」的衣夾區塊按「更新韌體」，選 `build/hx711_scale.bin`，再選衣夾。
@@ -72,7 +78,6 @@ USB 監看時輸入 `setup` 加 Enter，也能開啟熱點並再次顯示熱點�
 #define APP_MQTT_HOST "iot.hamichi.tw"
 #define APP_MQTT_PORT 8883
 #define APP_MQTT_TLS  1
-#define APP_MQTT_TOPIC "clothes/raw"
 ```
 
 帳密可填在本機 `app_config.h` 作為初始值，或在手機設定頁輸入後保存到 NVS；不要提交實際帳密。TLS 使用 ESP-IDF CA bundle 驗證憑證與主機名稱，連線前透過 SNTP 校時；Wi-Fi 必須能連外並使用 NTP。校時只供憑證驗證，MQTT payload 仍只有三個 raw 欄位，沒有裝置時間。

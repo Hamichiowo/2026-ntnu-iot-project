@@ -227,12 +227,12 @@ function Invoke-Show {
         if ($Esp32Tls -and (Test-Tls) -and -not (Test-TlsCa)) {
             Info 'ESP32: firmware/esp32-s3/main/app_config.h or the phone setup page (TLS)'
             $espHost = Or-Default $tlsHost '<domain on the certificate>'
-            Write-Host "#define APP_MQTT_HOST       `"$espHost`"`n#define APP_MQTT_PORT       $tlsPort`n#define APP_MQTT_TLS        1`n#define APP_MQTT_USERNAME   `"$user`"`n#define APP_MQTT_PASSWORD   `"$pass`"`n#define APP_MQTT_TOPIC      `"$topic`""
+            Write-Host "#define APP_MQTT_HOST       `"$espHost`"`n#define APP_MQTT_PORT       $tlsPort`n#define APP_MQTT_TLS        1`n#define APP_MQTT_USERNAME   `"$user`"`n#define APP_MQTT_PASSWORD   `"$pass`""
         } else {
             Info 'ESP32: firmware/esp32-s3/main/app_config.h  (plain MQTT on the LAN)'
             Write-Host "#define APP_MQTT_HOST       `"$ip`"`n#define APP_MQTT_PORT       $port"
             if ($Esp32Tls) { Write-Host '#define APP_MQTT_TLS        0' }
-            Write-Host "#define APP_MQTT_USERNAME   `"$user`"`n#define APP_MQTT_PASSWORD   `"$pass`"`n#define APP_MQTT_TOPIC      `"$topic`""
+            Write-Host "#define APP_MQTT_USERNAME   `"$user`"`n#define APP_MQTT_PASSWORD   `"$pass`""
             if (Test-TlsCa) {
                 Warn 'The ESP32 only trusts public CAs, so it cannot use this self-signed certificate; keep it on plain MQTT in the LAN.'
             } elseif (Test-Tls) {

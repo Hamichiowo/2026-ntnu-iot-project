@@ -5,7 +5,7 @@
 ## 目前狀態
 
 - 分支 `feat/garments-sessions`，接在 `feat/clothes-redesign`（PR #12）後面開 PR（PR stack），要等 PR #12 合併後再合。照功能分成幾個 commit：全站設定 → 每支衣夾的設定 → 衣物庫和晾衣 → 示範資料進資料庫 → 前端接上 API 與標籤 → UUID 與名稱不重複。
-- 實際的衣夾先照現在一支做：`clothes/raw`、`clothes_raw` 沒有改，`clips` 裡 `topic = clothes/raw` 的那支（衣夾-01）就是它。多衣夾之後另外開分支處理。
+- 實際的衣夾已經各有自己的裝置 id 和 topic（`clothes/<id>/raw`），`clothes_raw.clip_id` 記每筆讀值屬於哪支衣夾，新衣夾第一次回報就自動註冊。細節見 CLAUDE.md 的「MQTT 約定（衣夾）」。
 
 ## 這一輪做好的部分
 

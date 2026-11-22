@@ -31,6 +31,7 @@
 
 ```bash
 make setup   # 第一次：建立 .env、產生 MQTT 密碼，並印出 ESP32 與 MAPS 盒子要填的設定
+./scripts/setup.sh admin --http   # 設定網頁登入密碼（會問兩次）；用 https 開網頁時不要加 --http
 make up      # 啟動全部服務（正式模式）
 make check   # 確認 MQTT 帳密正確、列出被拒絕的裝置
 ```
@@ -48,6 +49,16 @@ docker compose up -d --build
 - 智慧衣夾：http://localhost:8088
 - 原有空氣盒子：http://localhost:8088/air
 - MQTT：這台電腦的區域網路 IP，預設 port 1883
+
+### 加入一支衣夾
+
+伺服器這邊不用做任何設定。衣夾（韌體 0.5.0 以上）只要知道 Wi-Fi 和 MQTT 主機：
+
+1. 衣夾開機後按住 BOOT 鍵 3 秒，手機連上 `Clothes-Setup-xxxx` 熱點，打開 `192.168.4.1`。
+2. 填 Wi-Fi，以及 `make setup` 印出的 MQTT 主機、port、帳號、密碼，按測試並儲存。
+3. 衣夾送出第一筆資料後，網頁的「設備狀況」就會自動多一支衣夾，名稱可以再改。
+
+每支衣夾用自己晶片的編號當 id，topic 是 `clothes/<id>/raw`，不用設定。
 
 `.env` 不會上傳 GitHub。MQTT 帳號、密碼都必須在 `.env` 設定（範本帳號為 `clothes`），沒設定時服務不會啟動。**ESP32 與 MAPS 盒子都必須使用同一組帳密**，否則 broker 會拒絕連線。忘記要填什麼時，執行 `make show` 再印一次。
 
@@ -162,7 +173,7 @@ smoke 測試會寫入測試讀值，驗證 MQTT、DB、API；clothes 測試另�
 
 ### MQTT 約定（衣夾）
 
-Topic：`clothes/raw`。約每分鐘一筆（有人碰衣夾時每 10 秒），QoS 1、retain=false，斷線不補傳歷史資料。每筆的 hx711_raw 是 10 次讀值的中位數，兩次回報之間 ESP32 深度睡眠。
+Topic：`clothes/<id>/raw`，`<id>` 是衣夾自己的編號（ESP32 的 MAC，例如 `FC012CD245E0`），不用設定；伺服器收到新編號的第一筆資料就會自動多一支衣夾。約每分鐘一筆（有人碰衣夾時每 10 秒），QoS 1、retain=false，斷線不補傳歷史資料。每筆的 hx711_raw 是 10 次讀值的中位數。
 
 ```json
 {"hx711_raw":86042,"ads1115_raw":7799,"touch_raw":31875}
