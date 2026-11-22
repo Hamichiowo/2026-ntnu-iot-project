@@ -9,7 +9,7 @@ const now = Date.UTC(2026, 10, 21, 4, 0);  // 12:00 Taipei
 describe('Demo seed', () => {
   const seed = demoSeed(now);
   it('never touches the real clip 衣夾-01', () => {
-    expect(seed.clips.map((c) => c.name)).toEqual(['衣夾-02', '衣夾-03', '衣夾-04', '衣夾-05', '衣夾-06', '衣夾-07', '衣夾-08']);
+    expect(seed.clips.map((c) => c.name)).toEqual(['衣夾-02', '衣夾-03', '衣夾-04', '衣夾-05', '衣夾-06']);
     expect(seed.sessions.some((s) => s.clip === '衣夾-01')).toBe(false);
   });
   it('has unique names and only refers to its own clips and garments', () => {
@@ -21,11 +21,10 @@ describe('Demo seed', () => {
     // Ids come from the database, never from the seed.
     expect(JSON.stringify(seed)).not.toContain('"id"');
   });
-  it('keeps one active session per clip and per garment, and valid records', () => {
-    const active = seed.sessions.filter((s) => s.ended_at === null);
-    expect(active.length).toBe(4);
-    expect(new Set(active.map((s) => s.clip)).size).toBe(4);
-    expect(new Set(active.map((s) => s.garment)).size).toBe(4);
+  it('leaves every demo clip free, with valid records that each have a curve seed', () => {
+    expect(seed.sessions.filter((s) => s.ended_at === null).length).toBe(0);
+    expect(new Set(seed.sessions.map((s) => s.seed)).size).toBe(seed.sessions.length);
+    for (const s of seed.sessions) expect(Number.isInteger(s.seed) && s.seed >= 0 && s.seed <= 2147483647).toBe(true);
     for (const s of seed.sessions) {
       expect(s.predicted_min).toBeGreaterThan(0);
       expect(s.started_at.getTime()).toBeLessThan(now);

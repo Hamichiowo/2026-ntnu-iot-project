@@ -46,6 +46,13 @@ describe('Drying body validation', () => {
   it('takes either an existing garment or a new one when starting', () => {
     expect(parseStart({ clip_id: CLIP, garment_id: GARMENT })).toEqual({ clip_id: CLIP, garment_id: GARMENT });
     expect(parseStart({ clip_id: CLIP, garment })).toEqual({ clip_id: CLIP, garment } as any);
+    // Demo clips: the curve seed and how long ago the garment was hung up.
+    expect(parseStart({ clip_id: CLIP, garment_id: GARMENT, demo: { seed: 42, elapsed_min: 90 } }))
+      .toEqual({ clip_id: CLIP, garment_id: GARMENT, demo: { seed: 42, elapsed_min: 90 } } as any);
+    for (const demo of [null, 1, {}, { seed: -1, elapsed_min: 0 }, { seed: 1.5, elapsed_min: 0 }, { seed: 1, elapsed_min: 7 * 1440 + 1 },
+      { seed: 1, elapsed_min: 5, start: 1 }, { seed: 2147483648, elapsed_min: 0 }]) {
+      expect(status(() => parseStart({ clip_id: CLIP, garment_id: GARMENT, demo }))).toBe(400);
+    }
     for (const body of [{ clip_id: CLIP }, { clip_id: CLIP, garment_id: GARMENT, garment }, { garment_id: GARMENT },
       { clip_id: CLIP, garment: { name: 'x' } }, { clip_id: 'c1', garment_id: GARMENT }, { clip_id: CLIP, garment_id: 'g_1' }]) {
       expect(status(() => parseStart(body))).toBe(400);

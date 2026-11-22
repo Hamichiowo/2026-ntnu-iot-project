@@ -100,6 +100,9 @@ export async function ensureDryingSchema(): Promise<void> {
   }
   await ensureRealClip(sql);
   await ensureClipReadings(sql);
+  // Demo sessions carry the seed of their simulated sensor curves (web/src/utils/demoSensor.ts).
+  await sql`ALTER TABLE drying_sessions ADD COLUMN IF NOT EXISTS demo_seed INTEGER`;
+  await addConstraint(sql, 'drying_sessions', 'drying_sessions_demo_seed_demo_only', 'CHECK (demo_seed IS NULL OR is_demo)');
   dryingState.schemaReady = true;
 }
 
@@ -267,19 +270,33 @@ export function parseClipPatch(body: unknown): ClipPatch {
   return out;
 }
 
-export type StartBody = { clip_id: string; garment_id: string } | { clip_id: string; garment: GarmentDraft };
+// demo (demo clips only): the seed of the simulated curves, and how long ago to start the session so
+// that the garment is already as dry as the person chose (the page works that out from the seed).
+export interface DemoStart { seed: number; elapsed_min: number }
+export type StartBody = ({ clip_id: string; garment_id: string } | { clip_id: string; garment: GarmentDraft }) & { demo?: DemoStart };
 export function parseStart(body: unknown): StartBody {
   if (!isObject(body)) throw new HttpError(400, '內容必須是 JSON 物件');
-  checkKeys(body, ['clip_id', 'garment_id', 'garment']);
+  checkKeys(body, ['clip_id', 'garment_id', 'garment', 'demo']);
   if (!isUuid(body.clip_id)) throw new HttpError(400, '欄位 clip_id 必須是衣夾的 UUID');
+  let demo: DemoStart | undefined;
+  if (body.demo !== undefined) {
+    const d = body.demo as Record<string, unknown>;
+    if (!isObject(d) || Object.keys(d).some((k) => k !== 'seed' && k !== 'elapsed_min') ||
+        !Number.isInteger(d.seed) || (d.seed as number) < 0 || (d.seed as number) > 2147483647 ||
+        !Number.isInteger(d.elapsed_min) || (d.elapsed_min as number) < 0 || (d.elapsed_min as number) > 7 * 1440) {
+      throw new HttpError(400, '欄位 demo 必須是 { seed: 0～2147483647, elapsed_min: 0～10080 }');
+    }
+    demo = { seed: d.seed as number, elapsed_min: d.elapsed_min as number };
+  }
+  const withDemo = <T extends object>(start: T) => (demo ? { ...start, demo } : start);
   if ((body.garment_id === undefined) === (body.garment === undefined)) {
     throw new HttpError(400, 'garment_id 與 garment 必須擇一提供');
   }
   if (body.garment_id !== undefined) {
     if (!isUuid(body.garment_id)) throw new HttpError(400, '欄位 garment_id 必須是衣物的 UUID');
-    return { clip_id: body.clip_id, garment_id: body.garment_id };
+    return withDemo({ clip_id: body.clip_id, garment_id: body.garment_id });
   }
-  return { clip_id: body.clip_id, garment: parseGarment(body.garment) as GarmentDraft };
+  return withDemo({ clip_id: body.clip_id, garment: parseGarment(body.garment) as GarmentDraft });
 }
 
 export function parseGarmentId(body: unknown): string {
@@ -328,7 +345,7 @@ export function parseOutcome(body: unknown): Outcome {
 // ===== Row shapes =====
 type SessionRow = {
   id: string; clip_id: string; garment_id: string; started_at: Date; predicted_min: number;
-  ended_at: Date | null; outcome: 'dry' | 'early' | null; actual_min: number | null; is_demo: boolean;
+  ended_at: Date | null; outcome: 'dry' | 'early' | null; actual_min: number | null; is_demo: boolean; demo_seed: number | null;
   g_name: string; g_style: string; g_color: string; g_material: string;
 };
 
@@ -337,7 +354,7 @@ function sessionOut(row: SessionRow) {
   return {
     id: row.id, clip_id: row.clip_id, garment_id: row.garment_id, started_at: started,
     predicted_min: row.predicted_min, dry_at: new Date(started.getTime() + row.predicted_min * MIN),
-    ended_at: row.ended_at, outcome: row.outcome, actual_min: row.actual_min, is_demo: row.is_demo,
+    ended_at: row.ended_at, outcome: row.outcome, actual_min: row.actual_min, is_demo: row.is_demo, demo_seed: row.demo_seed ?? null,
     garment: { id: row.garment_id, name: row.g_name, style: row.g_style, color: row.g_color, material: row.g_material },
   };
 }
@@ -346,12 +363,12 @@ function sessionOut(row: SessionRow) {
 async function selectSessions(sql: any, where: 'active' | 'id', id?: string, includeDemo = false) {
   const rows: SessionRow[] = where === 'active'
     ? await sql`
-      SELECT s.id, s.clip_id, s.garment_id, s.started_at, s.predicted_min, s.ended_at, s.outcome, s.actual_min, s.is_demo,
+      SELECT s.id, s.clip_id, s.garment_id, s.started_at, s.predicted_min, s.ended_at, s.outcome, s.actual_min, s.is_demo, s.demo_seed,
         g.name AS g_name, g.style AS g_style, g.color AS g_color, g.material AS g_material
       FROM drying_sessions s JOIN garments g ON g.id = s.garment_id
       WHERE s.ended_at IS NULL AND (${includeDemo} OR NOT s.is_demo) ORDER BY s.started_at`
     : await sql`
-      SELECT s.id, s.clip_id, s.garment_id, s.started_at, s.predicted_min, s.ended_at, s.outcome, s.actual_min, s.is_demo,
+      SELECT s.id, s.clip_id, s.garment_id, s.started_at, s.predicted_min, s.ended_at, s.outcome, s.actual_min, s.is_demo, s.demo_seed,
         g.name AS g_name, g.style AS g_style, g.color AS g_color, g.material AS g_material
       FROM drying_sessions s JOIN garments g ON g.id = s.garment_id
       WHERE s.id = ${id}::uuid`;
@@ -518,10 +535,14 @@ export async function startSession(body: StartBody, now: Date) {
         : (await tx`SELECT id, material, is_demo FROM garments WHERE id = ${body.garment_id}::uuid`)[0];
       if (!garment) throw new HttpError(404, '找不到這件衣物');
       if (garment.is_demo !== clip.is_demo) throw new HttpError(400, MIXED_DEMO);
+      if (body.demo && !clip.is_demo) throw new HttpError(400, '只有示範衣夾可以設定示範的乾燥程度');
       const predicted = await predictFor(tx, garment.id, garment.material);
+      // A demo session always has a seed for its simulated curves; it may start in the past.
+      const seed = clip.is_demo ? body.demo?.seed ?? Math.floor(Math.random() * 2147483647) : null;
+      const startedAt = new Date(now.getTime() - (body.demo?.elapsed_min ?? 0) * MIN);
       const rows = await tx`
-        INSERT INTO drying_sessions (clip_id, garment_id, started_at, predicted_min, is_demo)
-        VALUES (${body.clip_id}::uuid, ${garment.id}::uuid, ${now}, ${predicted}, ${clip.is_demo})
+        INSERT INTO drying_sessions (clip_id, garment_id, started_at, predicted_min, is_demo, demo_seed)
+        VALUES (${body.clip_id}::uuid, ${garment.id}::uuid, ${startedAt}, ${predicted}, ${clip.is_demo}, ${seed})
         RETURNING id`;
       return rows[0].id;
     });
@@ -581,7 +602,7 @@ export async function listRecords(start: Date | null, end: Date | null, limit: n
   const from = start ?? new Date(0);
   const to = end ?? new Date('9999-12-31T00:00:00Z');
   const rows: SessionRow[] = await sql`
-    SELECT s.id, s.clip_id, s.garment_id, s.started_at, s.predicted_min, s.ended_at, s.outcome, s.actual_min, s.is_demo,
+    SELECT s.id, s.clip_id, s.garment_id, s.started_at, s.predicted_min, s.ended_at, s.outcome, s.actual_min, s.is_demo, s.demo_seed,
       g.name AS g_name, g.style AS g_style, g.color AS g_color, g.material AS g_material
     FROM drying_sessions s JOIN garments g ON g.id = s.garment_id
     WHERE s.ended_at IS NOT NULL AND s.started_at >= ${from} AND s.started_at <= ${to} AND (${includeDemo} OR NOT s.is_demo)
