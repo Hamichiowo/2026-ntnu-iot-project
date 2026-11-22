@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import {
   AIR_MAX_AGE_MS, CSV_HEADER, type CsvRow, airReadings, clothesAirboxId, listAirboxes, clothesCsvLine, clothesExportRows,
-  clothesHistory, clothesState, latestAir, latestClothesRaw, CLIP_STALE_MS, isUuid,
+  clothesHistory, clothesState, defaultClipId, latestAir, latestClothesRaw, CLIP_STALE_MS, isUuid,
 } from '../clothes/store';
 import { mqttSubscriber } from '../mqtt/subscriber';
 import { dryingRoute } from './drying';
@@ -27,6 +27,9 @@ async function chosenAirbox(requested: string | undefined, clip: string | undefi
   return optional(() => clothesAirboxId(clip));
 }
 
+// ?clip=<uuid> picks whose readings to return; without it, the first real clip.
+const clipOf = async (clip: string | undefined) => clip ?? await defaultClipId();
+
 // Air boxes for the dashboard picker; "connected" = online and reported within the last 5 minutes.
 clothesRoute.get('/airboxes', async (c) => {
   const boxes = await optional(listAirboxes);
@@ -45,7 +48,7 @@ clothesRoute.get('/latest', async (c) => {
   try {
     const airboxId = await chosenAirbox(c.req.query('airbox'), c.req.query('clip'));
     if (airboxId === undefined) return c.json(BAD_AIRBOX, 400);
-    const data = await latestClothesRaw();
+    const data = await latestClothesRaw(await clipOf(c.req.query('clip')));
     const now = new Date();
     const ageMs = data ? Math.max(0, now.getTime() - new Date(data.timestamp).getTime()) : null;
     const reading = airboxId ? await optional(() => latestAir(airboxId)) : null;
@@ -77,7 +80,7 @@ clothesRoute.get('/export', async (c) => {
   }
   const airboxId = await chosenAirbox(c.req.query('airbox'), c.req.query('clip'));
   if (airboxId === undefined) return c.json(BAD_AIRBOX, 400);
-  const pages = clothesExportRows(start, end, 5000, airboxId);
+  const pages = clothesExportRows(start, end, 5000, airboxId, await optional(() => clipOf(c.req.query('clip'))));
   let first: IteratorResult<CsvRow[], void>;
   try { first = await pages.next(); } catch {
     return c.json({ success: false, error: '資料庫無法讀取，暫時無法匯出' }, 503);
@@ -124,7 +127,7 @@ clothesRoute.get('/history', async (c) => {
   try {
     const airboxId = await chosenAirbox(c.req.query('airbox'), c.req.query('clip'));
     if (airboxId === undefined) return c.json(BAD_AIRBOX, 400);
-    const result = await clothesHistory(start, end, limit);
+    const result = await clothesHistory(start, end, limit, await clipOf(c.req.query('clip')));
     const air = airboxId ? await optional(() => airReadings(airboxId, start, end)) : null;
     return c.json({ success: true, start: start.toISOString(), end: end.toISOString(), ...result,
       air: airboxId ? { device_id: airboxId, records: air ?? [] } : null });

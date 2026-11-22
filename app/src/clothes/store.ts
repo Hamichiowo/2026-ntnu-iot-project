@@ -3,8 +3,20 @@ import type { ClothesRaw } from './validation';
 
 export const clothesState = { schemaReady: false, lastError: null as string | null };
 
-// The MQTT topic of the physical clip. The clip with this topic in `clips` owns every reading on it.
-export const CLOTHES_TOPIC = process.env.CLOTHES_MQTT_TOPIC || 'clothes/raw';
+// Every clip has its own topics, named after its device id (the ESP32's Wi-Fi MAC, 12 hex digits):
+//   clothes/<id>/raw  readings        clothes/<id>/ota  update command        clothes/<id>/fw  firmware report
+// The server subscribes with a wildcard, so a new clip needs no setting here: its first message
+// registers it (clipIdForDevice).
+export const isDeviceId = (value: unknown): value is string => typeof value === 'string' && /^[0-9A-F]{12}$/.test(value);
+export const clipTopic = (deviceId: string, kind: 'raw' | 'ota' | 'fw') => `clothes/${deviceId}/${kind}`;
+export const CLIP_TOPICS = ['clothes/+/raw', 'clothes/+/fw'];
+export function parseClipTopic(topic: string): { deviceId: string; kind: 'raw' | 'fw' } | null {
+  const match = /^clothes\/([0-9A-F]{12})\/(raw|fw)$/.exec(topic);
+  return match ? { deviceId: match[1], kind: match[2] as 'raw' | 'fw' } : null;
+}
+// Firmware before 0.5.0 shares one topic for all clips. Set CLOTHES_MQTT_TOPIC to that topic only
+// while such a clip still has to be reached (to update it); its readings go to the first real clip.
+export const LEGACY_TOPIC = process.env.CLOTHES_MQTT_TOPIC?.trim() || null;
 // Clips, garments and sessions use server-generated UUIDs.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (value: unknown): value is string => typeof value === 'string' && UUID.test(value);
@@ -44,21 +56,58 @@ function database() {
   return dbClient.sql;
 }
 
-export async function insertClothesRaw(raw: ClothesRaw, receivedAt: Date) {
+// The clip a device id belongs to. An id seen for the first time takes over the real clip that has
+// no device yet (the placeholder 衣夾-01, or the clip that owns the readings from before clips had
+// ids); when there is none, a new clip is created. Names can be changed on the dashboard.
+const knownDevices = new Map<string, string>();
+export async function clipIdForDevice(deviceId: string): Promise<string> {
+  const cached = knownDevices.get(deviceId);
+  if (cached) return cached;
+  const sql = database();
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      let id: string | undefined = (await sql`SELECT id FROM clips WHERE device_id = ${deviceId}`)[0]?.id;
+      if (!id) {
+        id = (await sql`
+          UPDATE clips SET device_id = ${deviceId}, updated_at = now()
+          WHERE device_id IS NULL AND id = (SELECT id FROM clips WHERE NOT is_demo AND device_id IS NULL ORDER BY created_at, id LIMIT 1)
+          RETURNING id`)[0]?.id;
+      }
+      if (!id) {
+        // The lowest 衣夾-NN no clip uses, demo ones included, so two cards never share a name.
+        const taken = new Set((await sql`SELECT lower(name) AS name FROM clips`).map((row: { name: string }) => row.name));
+        let number = 1;
+        while (taken.has(`衣夾-${String(number).padStart(2, '0')}`)) number += 1;
+        const name = `衣夾-${String(number).padStart(2, '0')}`;
+        id = (await sql`INSERT INTO clips (name, device_id) VALUES (${name}, ${deviceId}) RETURNING id`)[0].id as string;
+        console.log(`[Clothes] New clip ${name} registered for device ${deviceId}`);
+      }
+      knownDevices.set(deviceId, id);
+      return id;
+    } catch (error: any) {
+      // Unique violation: another message registered this device, or the name is taken. Look again.
+      if ((error?.errno ?? error?.code) !== '23505') throw error;
+    }
+  }
+  throw new Error(`Clip for device ${deviceId} could not be registered`);
+}
+
+export async function insertClothesRaw(raw: ClothesRaw, receivedAt: Date, clipId: string) {
   const sql = database();
   // Timestamp comes from the subscriber callback, never from the ESP32 or DB execution time.
   const rows = await sql`
-    INSERT INTO clothes_raw (timestamp, hx711_raw, ads1115_raw, touch_raw)
-    VALUES (${receivedAt}, ${raw.hx711_raw}, ${raw.ads1115_raw}, ${raw.touch_raw})
+    INSERT INTO clothes_raw (timestamp, clip_id, hx711_raw, ads1115_raw, touch_raw)
+    VALUES (${receivedAt}, ${clipId}::uuid, ${raw.hx711_raw}, ${raw.ads1115_raw}, ${raw.touch_raw})
     RETURNING id::text, timestamp, hx711_raw, ads1115_raw, touch_raw`;
   return rows[0];
 }
 
-export async function latestClothesRaw() {
+export async function latestClothesRaw(clipId: string | null) {
+  if (!clipId) return null;
   const sql = database();
   const rows = await sql`
     SELECT id::text, timestamp, hx711_raw, ads1115_raw, touch_raw FROM clothes_raw
-    ORDER BY timestamp DESC, id DESC LIMIT 1`;
+    WHERE clip_id = ${clipId}::uuid ORDER BY timestamp DESC, id DESC LIMIT 1`;
   return rows[0] ?? null;
 }
 
@@ -87,17 +136,17 @@ export function clothesCsvLine(row: CsvRow) {
 export const AIR_MAX_AGE_MS = 5 * 60000;
 export type AirReading = { timestamp: Date | string; temp: number | null; humi: number | null };
 
-// The clip that owns CLOTHES_TOPIC (the real clip); null before the drying schema has created it.
-export async function rawClipId(): Promise<string | null> {
-  const rows = await database()`SELECT id FROM clips WHERE topic = ${CLOTHES_TOPIC} AND NOT is_demo`;
+// The clip used when a request names none: the first real clip. Null before the drying schema has created it.
+export async function defaultClipId(): Promise<string | null> {
+  const rows = await database()`SELECT id FROM clips WHERE NOT is_demo ORDER BY created_at, id LIMIT 1`;
   return rows[0]?.id ?? null;
 }
 
-// Which air box to pair with a clip (default: the real clip): the clip's own setting
+// Which air box to pair with a clip (default: the first real clip): the clip's own setting
 // (clips.airbox_id), else CLOTHES_AIRBOX_ID, else the one that reported most recently.
 export async function clothesAirboxId(clipId?: string): Promise<string | null> {
   const sql = database();
-  const id = clipId ?? await rawClipId();
+  const id = clipId ?? await defaultClipId();
   const clips = id ? await sql`SELECT airbox_id FROM clips WHERE id = ${id}::uuid` : [];
   if (clips[0]?.airbox_id) return clips[0].airbox_id;
   if (process.env.CLOTHES_AIRBOX_ID) return process.env.CLOTHES_AIRBOX_ID;
@@ -142,18 +191,19 @@ export function attachAir<T extends CsvRow>(rows: T[], air: AirReading[], maxAge
 }
 
 // Raw (never averaged) rows in time order, read in pages so a week of data (1 Hz in older recordings) is not held in memory.
-export async function* clothesExportRows(start: Date, end: Date, pageSize = 5000, airboxId: string | null = null) {
+export async function* clothesExportRows(start: Date, end: Date, pageSize = 5000, airboxId: string | null = null, clipId: string | null = null) {
   const sql = database();
+  if (!clipId) return;
   let after: { timestamp: Date | string; id: string } | null = null;
   while (true) {
     const rows: CsvRow[] = after
       ? await sql`
         SELECT id::text, timestamp, hx711_raw, ads1115_raw, touch_raw FROM clothes_raw
-        WHERE timestamp <= ${end} AND (timestamp, id) > (${new Date(after.timestamp)}, ${after.id}::bigint)
+        WHERE clip_id = ${clipId}::uuid AND timestamp <= ${end} AND (timestamp, id) > (${new Date(after.timestamp)}, ${after.id}::bigint)
         ORDER BY timestamp, id LIMIT ${pageSize}`
       : await sql`
         SELECT id::text, timestamp, hx711_raw, ads1115_raw, touch_raw FROM clothes_raw
-        WHERE timestamp >= ${start} AND timestamp <= ${end}
+        WHERE clip_id = ${clipId}::uuid AND timestamp >= ${start} AND timestamp <= ${end}
         ORDER BY timestamp, id LIMIT ${pageSize}`;
     if (rows.length && airboxId) {
       const first = new Date(rows[0].timestamp), last = new Date(rows[rows.length - 1].timestamp);
@@ -165,11 +215,12 @@ export async function* clothesExportRows(start: Date, end: Date, pageSize = 5000
   }
 }
 
-export async function clothesHistory(start: Date, end: Date, limit: number) {
+export async function clothesHistory(start: Date, end: Date, limit: number, clipId: string | null) {
+  if (!clipId) return { records: [], truncated: false, bucket_seconds: 0 };
   const sql = database();
   const rows = await sql`
     SELECT id::text, timestamp, hx711_raw, ads1115_raw, touch_raw FROM clothes_raw
-    WHERE timestamp >= ${start} AND timestamp <= ${end}
+    WHERE clip_id = ${clipId}::uuid AND timestamp >= ${start} AND timestamp <= ${end}
     ORDER BY timestamp DESC, id DESC LIMIT ${limit + 1}`;
   if (rows.length <= limit) return { records: rows.reverse(), truncated: false, bucket_seconds: 0 };
   // Too many raw rows: average each sensor per time bucket so the whole range stays visible.
@@ -182,7 +233,7 @@ export async function clothesHistory(start: Date, end: Date, limit: number) {
       round(avg(ads1115_raw))::integer AS ads1115_raw,
       round(avg(touch_raw))::integer AS touch_raw
     FROM clothes_raw
-    WHERE timestamp >= ${start} AND timestamp <= ${end}
+    WHERE clip_id = ${clipId}::uuid AND timestamp >= ${start} AND timestamp <= ${end}
     GROUP BY 2 ORDER BY 2 LIMIT ${limit}`;
   return { records: buckets, truncated: false, bucket_seconds: bucket };
 }

@@ -1,4 +1,4 @@
-"""Exercise the actual MQTT -> PostgreSQL -> HTTP path for clothes/raw on a TEST stack.
+"""Exercise the actual MQTT -> PostgreSQL -> HTTP path for a clip topic (clothes/<id>/raw) on a TEST stack.
 
 Run after docker compose up -d --build, with no real sensor publishing.
 Creates test records and (with local_stack) restarts the app to check persistence.

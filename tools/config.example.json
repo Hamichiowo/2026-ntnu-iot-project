@@ -11,7 +11,7 @@
     "password": ""
   },
   "topics": {
-    "clothes": "clothes/raw",
+    "clothes": "clothes/AABBCC000001/raw",
     "maps_prefix": "MAPS"
   },
   "maps_test_device": "SMOKE-TEST-01"

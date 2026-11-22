@@ -1,16 +1,17 @@
 // Over-the-air firmware updates for the clips.
 //
 // The dashboard uploads an ESP-IDF app image; it is stored in PostgreSQL. A rollout creates one job
-// per clip and leaves a retained command on `<clip topic>/ota`. A clip sleeps between reports, so it
-// only sees the command the next time it wakes; it then downloads the image over HTTP from this
-// server (GET .../firmware/:id/image?token=), reboots into it and reports on `<clip topic>/fw`.
+// per clip and leaves a retained command on the clip's `clothes/<id>/ota`. A clip sleeps between
+// reports, so it only sees the command the next time it wakes; it then downloads the image over HTTP
+// from this server (GET .../firmware/:id/image?token=), reboots into it and reports on `clothes/<id>/fw`.
+// Clips on firmware before 0.5.0 use `<CLOTHES_MQTT_TOPIC>/ota` and `/fw` instead (LEGACY_TOPIC).
 // A clip is identified as "running image X" by the ELF SHA-256 inside the image, not by its
 // version text, so forgetting to bump the version cannot hide an update.
 import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { dbClient } from '../db/client';
 import { mqttPublisher } from '../mqtt/publisher';
 import { HttpError } from './drying';
-import { isUuid } from './store';
+import { LEGACY_TOPIC, clipIdForDevice, clipTopic, defaultClipId, isUuid } from './store';
 
 export const FIRMWARE_MAX_BYTES = 3 * 1024 * 1024;  // one OTA slot (see firmware partitions.csv)
 // Port the clips use to reach this server's HTTP API: nginx in the web container.
@@ -153,7 +154,13 @@ export async function firmwareState() {
   return { images, jobs, clips };
 }
 
-const clearCommand = (topic: string) => mqttPublisher.publishRaw(`${topic}/ota`, '', true);
+// Where a clip reads its command: its own topic once its device id is known, else the shared one.
+const commandTopic = (deviceId: string | null) => deviceId ? clipTopic(deviceId, 'ota') : LEGACY_TOPIC ? `${LEGACY_TOPIC}/ota` : null;
+// A clip updated from older firmware was told on the shared topic and answers on its own, so both are cleared.
+async function clearCommand(deviceId: string | null) {
+  if (deviceId) await mqttPublisher.publishRaw(clipTopic(deviceId, 'ota'), '', true);
+  if (LEGACY_TOPIC) await mqttPublisher.publishRaw(`${LEGACY_TOPIC}/ota`, '', true);
+}
 
 // Queues the image for the chosen real clips (demo clips have no device behind them).
 export async function startRollout(imageId: string, target: 'all' | string[]) {
@@ -162,12 +169,12 @@ export async function startRollout(imageId: string, target: 'all' | string[]) {
   const images = await sql`SELECT id, elf_sha, size, token FROM firmware_images WHERE id = ${imageId}::uuid`;
   if (!images.length) throw new HttpError(404, '找不到這個韌體');
   const image = images[0];
-  const real = await sql`
-    SELECT c.id, c.topic, f.elf_sha FROM clips c LEFT JOIN clip_firmware f ON f.clip_id = c.id
-    WHERE NOT c.is_demo AND c.topic IS NOT NULL`;
+  const real = (await sql`
+    SELECT c.id, c.device_id, f.elf_sha FROM clips c LEFT JOIN clip_firmware f ON f.clip_id = c.id
+    WHERE NOT c.is_demo`).filter((clip: { device_id: string | null }) => commandTopic(clip.device_id));
   const chosen = target === 'all' ? real : real.filter((clip: { id: string }) => target.includes(clip.id));
-  if (target !== 'all' && chosen.length !== target.length) throw new HttpError(400, '只能更新實體衣夾');
-  if (!chosen.length) throw new HttpError(400, '沒有可以更新的實體衣夾');
+  if (target !== 'all' && chosen.length !== target.length) throw new HttpError(400, '只能更新連線過的實體衣夾');
+  if (!chosen.length) throw new HttpError(400, '沒有可以更新的實體衣夾（衣夾要先連線回報過一次）');
   if (!mqttPublisher.isConnected()) throw new Error('MQTT unavailable');
   let started = 0;
   let current = 0;
@@ -175,7 +182,7 @@ export async function startRollout(imageId: string, target: 'all' | string[]) {
     if (clip.elf_sha === image.elf_sha) { current += 1; continue; }  // already running this image
     await sql`UPDATE firmware_jobs SET state = 'cancelled', updated_at = now() WHERE clip_id = ${clip.id}::uuid AND state IN ('queued', 'downloading')`;
     await sql`INSERT INTO firmware_jobs (clip_id, image_id) VALUES (${clip.id}::uuid, ${image.id}::uuid)`;
-    await mqttPublisher.publishRaw(`${clip.topic}/ota`, otaCommand(image), true);
+    await mqttPublisher.publishRaw(commandTopic(clip.device_id)!, otaCommand(image), true);
     started += 1;
   }
   return { started, current };
@@ -186,22 +193,22 @@ export async function cancelFirmwareJob(jobId: string) {
   const sql = database();
   const rows = await sql`
     UPDATE firmware_jobs j SET state = 'cancelled', updated_at = now() FROM clips c
-    WHERE j.id = ${jobId}::uuid AND j.state = 'queued' AND c.id = j.clip_id RETURNING c.topic`;
+    WHERE j.id = ${jobId}::uuid AND j.state = 'queued' AND c.id = j.clip_id RETURNING c.device_id`;
   if (!rows.length) {
     const exists = await sql`SELECT 1 FROM firmware_jobs WHERE id = ${jobId}::uuid`;
     throw exists.length ? new HttpError(409, '衣夾已經開始下載或更新已結束，無法取消') : new HttpError(404, '找不到這筆更新');
   }
-  if (rows[0].topic) await clearCommand(rows[0].topic);
+  await clearCommand(rows[0].device_id);
 }
 
-// A clip's report on `<topic>/fw`: remembers what it runs and moves its job along.
-export async function ingestFirmwareReport(clipTopic: string, text: string, now: Date): Promise<void> {
+// A clip's report on its `fw` topic: remembers what it runs and moves its job along.
+// deviceId: the id in the topic; null for the shared topic of firmware before 0.5.0.
+export async function ingestFirmwareReport(deviceId: string | null, text: string, now: Date): Promise<void> {
   const report = parseFirmwareReport(text);
   if (!report) return;
   const sql = database();
-  const clips = await sql`SELECT id FROM clips WHERE topic = ${clipTopic} AND NOT is_demo`;
-  if (!clips.length) return;
-  const clipId = clips[0].id;
+  const clipId = deviceId ? await clipIdForDevice(deviceId) : await defaultClipId();
+  if (!clipId) return;
   await sql`
     INSERT INTO clip_firmware (clip_id, version, elf_sha, reported_at) VALUES (${clipId}::uuid, ${report.version}, ${report.sha}, ${now})
     ON CONFLICT (clip_id) DO UPDATE SET version = EXCLUDED.version, elf_sha = EXCLUDED.elf_sha, reported_at = EXCLUDED.reported_at`;
@@ -212,11 +219,11 @@ export async function ingestFirmwareReport(clipTopic: string, text: string, now:
   const job = jobs[0];
   if (report.state === 'running' && report.sha === job.elf_sha) {
     await sql`UPDATE firmware_jobs SET state = 'done', progress = 100, detail = NULL, updated_at = ${now} WHERE id = ${job.id}::uuid`;
-    await clearCommand(clipTopic);
+    await clearCommand(deviceId);
   } else if (report.state === 'downloading' && report.target === job.elf_sha) {
     await sql`UPDATE firmware_jobs SET state = 'downloading', progress = ${report.progress}, updated_at = ${now} WHERE id = ${job.id}::uuid`;
   } else if (report.state === 'failed' && report.target === job.elf_sha) {
     await sql`UPDATE firmware_jobs SET state = 'failed', detail = ${report.detail ?? '衣夾回報更新失敗'}, updated_at = ${now} WHERE id = ${job.id}::uuid`;
-    await clearCommand(clipTopic);
+    await clearCommand(deviceId);
   }
 }
