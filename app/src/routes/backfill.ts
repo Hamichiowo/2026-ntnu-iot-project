@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { batchInsertSensorData, getDeviceDateSummary } from '../db/queries';
 import type { SensorData } from '../types';
+import { readSession } from '../auth/session';
 
 export const backfillRoute = new Hono();
 
@@ -8,8 +9,7 @@ export const backfillRoute = new Hono();
 async function deviceAuthMiddleware(c: any, next: any) {
   const authHeader = c.req.header('Authorization');
 
-  // Allow admin session token
-  if (authHeader && (authHeader === 'Bearer maps6-session-token' || authHeader === 'maps6-session-token')) {
+  if (readSession(c)) {
     return await next();
   }
 
@@ -82,7 +82,7 @@ backfillRoute.post('/:id/backfill', deviceAuthMiddleware, async (c) => {
 // POST /api/v1/devices/:id/backfill/csv (Multipart CSV upload)
 backfillRoute.post('/:id/backfill/csv', deviceAuthMiddleware, async (c) => {
   const deviceId = c.req.param('id');
-  const body = await c.req.parseBody().catch(() => ({}));
+  const body = (await c.req.parseBody().catch(() => ({}))) as Record<string, string | File>;
   const file = body['file'];
 
   if (!file || typeof file === 'string') {

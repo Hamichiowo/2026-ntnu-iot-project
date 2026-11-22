@@ -66,3 +66,4 @@ mosquitto/certs/*
 !mosquitto/certs/.gitkeep
 mosquitto/conf.d/*.conf
 tools/config.json
+auth-state/

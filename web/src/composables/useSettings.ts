@@ -3,6 +3,7 @@
 // value replaces it as soon as it arrives. Saving goes to the server first and only changes
 // the local state once the server has stored it.
 import { reactive, ref } from 'vue';
+import { apiFetch } from './useAuth';
 
 export interface Settings { demo_data: boolean }
 
@@ -28,7 +29,7 @@ function apply(value: Settings) {
 }
 
 async function call(method: 'GET' | 'PATCH', body?: Partial<Settings>): Promise<Settings> {
-  const response = await fetch('/api/v1/settings', {
+  const response = await apiFetch('/api/v1/settings', {
     method, cache: 'no-store',
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,

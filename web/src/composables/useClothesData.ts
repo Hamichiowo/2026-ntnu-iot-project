@@ -6,6 +6,7 @@
 // from setup; polling runs only while at least one consumer is mounted.
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { DAY_MS, fromTaipeiInput, toTaipeiInput } from '../utils/format';
+import { apiFetch } from './useAuth';
 
 export type Field = 'hx711_raw' | 'ads1115_raw' | 'touch_raw';
 export type Reading = { id: string; timestamp: string } & Record<Field, number | null>;
@@ -68,7 +69,7 @@ export async function request(path: string, init: { method?: string; body?: unkn
   controllers.add(controller);
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
-    const response = await fetch(path, {
+    const response = await apiFetch(path, {
       cache: 'no-store', signal: controller.signal, method: init.method,
       headers: init.body === undefined ? undefined : { 'Content-Type': 'application/json' },
       body: init.body === undefined ? undefined : JSON.stringify(init.body),

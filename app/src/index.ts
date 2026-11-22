@@ -3,8 +3,8 @@
 // ==============================================================================
 
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { readSession } from './auth/session';
 import { dbClient } from './db/client';
 import { mqttSubscriber } from './mqtt/subscriber';
 import { mqttPublisher } from './mqtt/publisher';
@@ -27,11 +27,6 @@ const app = new Hono();
 
 // Global Middlewares
 app.use('*', logger());
-app.use('*', cors({
-  origin: '*',
-  allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-}));
 
 // Basic Root & Health
 app.get('/', (c) => c.text('MAPS 6.0 Central Server API is running'));
@@ -43,6 +38,10 @@ app.route('/api/v1', apiRouter);
 // WebSocket Endpoint
 app.get(
   '/ws',
+  async (c, next) => {
+    if (!readSession(c)) return c.json({ success: false, error: 'Unauthorized' }, 401);
+    await next();
+  },
   upgradeWebSocket(() => {
     return {
       onOpen(_event, ws) {

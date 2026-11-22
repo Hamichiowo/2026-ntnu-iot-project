@@ -16,7 +16,7 @@
         </label>
         <p class="switch-note">
           {{ demoEnabled
-            ? '目前一起顯示示範的衣夾-02～08、衣物、晾衣紀錄與天氣，並標上「示範」；統計只算實際資料。關閉後只留下實際的資料。'
+            ? '目前一起顯示示範的衣夾-02～08、衣物、晾衣紀錄與降雨時間，並標上「示範」；戶外溫濕度來自氣象署，統計只算實際資料。'
             : '目前只顯示實際的衣夾、衣物與晾衣紀錄。示範資料仍保留在伺服器，重新開啟就會回來。' }}
         </p>
         <p v-if="demoError || settingsError" class="ui-note ui-note--error" role="alert">{{ demoError || settingsError }}</p>
@@ -101,6 +101,7 @@
 import { ref, onMounted } from 'vue';
 import { useClothesMock } from '../composables/useClothesMock';
 import { useSettings } from '../composables/useSettings';
+import { apiFetch } from '../composables/useAuth';
 
 const { demoEnabled, setDemoEnabled } = useClothesMock();
 const { settingsError } = useSettings();
@@ -125,8 +126,8 @@ const stats = ref<any>({});
 async function checkHealthAndStats() {
   try {
     const [hRes, sRes] = await Promise.all([
-      fetch('/api/v1/system/health'),
-      fetch('/api/v1/system/stats'),
+      apiFetch('/api/v1/system/health'),
+      apiFetch('/api/v1/system/stats'),
     ]);
     health.value = await hRes.json();
     const sData = await sRes.json();

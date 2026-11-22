@@ -106,6 +106,7 @@ import { useClothesLive } from '../composables/useClothesData';
 import { useClothesMock } from '../composables/useClothesMock';
 import DemoTag from '../components/clothes/DemoTag.vue';
 import { useWebSocket } from '../composables/useWebSocket';
+import { apiFetch } from '../composables/useAuth';
 import { agoText, clock, dayLabel, formatAir, formatRaw, minutesText } from '../utils/format';
 
 const { latest, connectionText } = useClothesLive();
@@ -152,13 +153,13 @@ const airError = ref('');
 let airTimer: ReturnType<typeof setInterval> | undefined;
 async function loadAir() {
   try {
-    const res = await fetch('/api/v1/devices', { cache: 'no-store' });
+    const res = await apiFetch('/api/v1/devices', { cache: 'no-store' });
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
     airDevices.value = [...data.devices].sort((a: AirDevice, b: AirDevice) => a.device_id.localeCompare(b.device_id));
     await Promise.all(airDevices.value.map(async (d) => {
       try {
-        const r = await fetch(`/api/v1/devices/${d.device_id}/sensor/latest`, { cache: 'no-store' });
+        const r = await apiFetch(`/api/v1/devices/${d.device_id}/sensor/latest`, { cache: 'no-store' });
         const s = await r.json();
         if (s.success && s.data) airLatest.value[d.device_id] = s.data;
       } catch { /* keep the last reading */ }

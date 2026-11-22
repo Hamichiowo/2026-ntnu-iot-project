@@ -13,8 +13,18 @@ import { backfillRoute } from './backfill';
 import { authRoute } from './auth';
 import { clothesRoute } from './clothes';
 import { settingsRoute } from './settings';
+import { weatherRoute } from './weather';
+import { sessionMiddleware } from '../auth/session';
 
 export const apiRouter = new Hono();
+
+apiRouter.use('*', async (context, next) => {
+  const path = context.req.path;
+  if (path.endsWith('/auth/login') || path.endsWith('/auth/me')) return next();
+  const deviceCredentialPath = /\/devices\/[^/]+\/(backfill(?:\/csv)?|date-summary)$/.test(path);
+  if (deviceCredentialPath && context.req.header('Authorization')?.startsWith('Basic ')) return next();
+  return sessionMiddleware(context, next);
+});
 
 // System Health Check
 apiRouter.get('/system/health', (c) => {
@@ -47,3 +57,4 @@ apiRouter.route('/devices', devicesRoute);
 apiRouter.route('/devices', commandsRoute);
 apiRouter.route('/devices', sensorsRoute);
 apiRouter.route('/devices', backfillRoute);
+apiRouter.route('/weather', weatherRoute);
