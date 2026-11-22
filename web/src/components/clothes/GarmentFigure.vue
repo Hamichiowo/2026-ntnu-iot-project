@@ -44,7 +44,8 @@
         <path :d="`M${x - 3},102 h6`" fill="none" :stroke="edge" stroke-width="1.5" stroke-linecap="round" />
       </g>
     </template>
-    <path v-else-if="!garment" :d="SHAPES.tee.d" fill="none" :stroke="palette.bd2" stroke-width="2.5" stroke-dasharray="8 6" stroke-linejoin="round" />
+    <!-- Empty hanger: the dashed outline is lifted like a real tee so it hangs on the arms. -->
+    <path v-else-if="!garment" :d="SHAPES.tee.d" :transform="`translate(0,${-SHAPES.tee.lift})`" fill="none" :stroke="palette.bd2" stroke-width="2.5" stroke-dasharray="8 6" stroke-linejoin="round" />
   </svg>
 </template>
 
