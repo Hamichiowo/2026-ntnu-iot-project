@@ -369,16 +369,23 @@ export async function listClips(includeDemo = false) {
   const sql = database();
   const clips = await sql`
     SELECT c.id, c.name, c.device_id, c.airbox_id, c.predict_method, c.is_demo, c.created_at, c.updated_at,
-      (SELECT r.timestamp FROM clothes_raw r WHERE r.clip_id = c.id ORDER BY r.timestamp DESC, r.id DESC LIMIT 1) AS last_reading
+      (SELECT r.id FROM clothes_raw r WHERE r.clip_id = c.id ORDER BY r.timestamp DESC, r.id DESC LIMIT 1) AS last_id
     FROM clips c WHERE ${includeDemo} OR NOT c.is_demo ORDER BY c.is_demo, lower(c.name)`;
   const firstReal = clips.find((clip: any) => !clip.is_demo && !clip.device_id)?.id;
+  // Each clip's newest reading, for the device cards.
+  const lastIds = clips.map((clip: any) => clip.last_id).filter((id: unknown) => id != null);
+  const lastRows = lastIds.length
+    ? await sql`SELECT id, timestamp, hx711_raw, ads1115_raw, touch_raw FROM clothes_raw WHERE id IN ${sql(lastIds)}` : [];
   const active = await selectSessions(sql, 'active', undefined, includeDemo);
   const now = Date.now();
   return clips.map((clip: any) => {
     // Demo clips never report; the front end simulates their state.
-    const lastReading = clip.is_demo ? null : clip.last_reading ?? null;
+    const { last_id: lastId, ...rest } = clip;
+    const last = clip.is_demo ? null : lastRows.find((row: any) => String(row.id) === String(lastId)) ?? null;
+    const lastReading = last?.timestamp ?? null;
     return {
-      ...clip,
+      ...rest,
+      latest: last && { timestamp: last.timestamp, hx711_raw: last.hx711_raw, ads1115_raw: last.ads1115_raw, touch_raw: last.touch_raw },
       // Where the clip publishes: its own topic, or the shared one of firmware before 0.5.0.
       topic: clip.device_id ? clipTopic(clip.device_id, 'raw') : clip.id === firstReal ? LEGACY_TOPIC : null,
       last_reading: lastReading,

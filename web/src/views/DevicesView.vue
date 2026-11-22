@@ -24,8 +24,9 @@
         <div class="facts">
           <div><span>最後回報</span><b>{{ c.status.lastSeenMs == null ? '尚未收到' : agoText(c.status.lastSeenMs) }}</b></div>
           <div><span>韌體版本</span><b class="mono">{{ c.version }}</b></div>
+          <div v-if="c.device.live"><span>裝置編號</span><b class="mono">{{ c.device.deviceId ?? '尚未連線' }}</b></div>
           <template v-if="c.status.online">
-            <div v-if="c.device.live"><span>重量 / 電阻 / 電容</span><b class="mono raw">{{ rawLine }}</b></div>
+            <div v-if="c.device.live"><span>重量 / 電阻 / 電容</span><b class="mono raw">{{ rawLine(c.status.latest) }}</b></div>
             <template v-else>
               <div><span>訊號</span><b>{{ c.device.signal }}</b></div>
               <div><span>運行時間</span><b>{{ c.status.uptimeMin == null ? '—' : minutesText(c.status.uptimeMin) }}</b></div>
@@ -43,7 +44,7 @@
         </div>
         <p v-if="c.device.issue && c.status.online" class="issue">{{ c.device.issue }}</p>
         <p v-else-if="c.status.tone === 'warn'" class="issue">有感測器本筆讀取失敗，請檢查排線</p>
-        <p v-else-if="!c.status.online && !c.job" class="muted-2">{{ c.device.live ? connectionText : '可能沒電或不在 Wi-Fi 範圍內，重新上線後會自動恢復' }}</p>
+        <p v-else-if="!c.status.online && !c.job" class="muted-2">{{ c.device.live ? offlineText(c) : '可能沒電或不在 Wi-Fi 範圍內，重新上線後會自動恢復' }}</p>
         <p v-else-if="!c.job" class="muted-2">重量、電阻、電容感測皆正常</p>
         <div class="dev-foot">
           <code class="mono muted">{{ c.device.topic }}</code>
@@ -124,11 +125,12 @@ import { useClothesMock } from '../composables/useClothesMock';
 import DemoTag from '../components/clothes/DemoTag.vue';
 import FirmwareDialog from '../components/clothes/FirmwareDialog.vue';
 import { FIRMWARE_PHASE, useFirmware } from '../composables/useFirmware';
+import type { ClipReading } from '../composables/useDrying';
 import { useWebSocket } from '../composables/useWebSocket';
 import { apiFetch } from '../composables/useAuth';
 import { agoText, clock, dayLabel, formatAir, formatRaw, minutesText } from '../utils/format';
 
-const { latest, connectionText } = useClothesLive();
+const { connectionText } = useClothesLive();
 const mock = useClothesMock();
 const firmware = useFirmware();
 const fwDialog = ref<InstanceType<typeof FirmwareDialog>>();
@@ -144,8 +146,13 @@ const clips = computed(() => mock.devices.value.map((device) => {
   return { device, status, session: session ? mock.garmentById(session.garmentId)?.name ?? '' : '',
     version: firmware.versionOf(device.id) ?? device.fw ?? '未回報', job: firmware.jobOf(device.id, status.online) };
 }));
-const rawLine = computed(() => latest.value
-  ? [latest.value.hx711_raw, latest.value.ads1115_raw, latest.value.touch_raw].map((v) => formatRaw(v)).join(' / ') : '—');
+// A real clip that is not sending: never seen, or how long ago it stopped. Server-wide trouble comes first.
+const offlineText = (c: { device: { deviceId: string | null }; status: { latest: ClipReading | null } }) =>
+  /異常|尚未連線/.test(connectionText.value) ? connectionText.value
+    : !c.device.deviceId && !c.status.latest ? '等待衣夾第一次連線：設定好衣夾的 Wi-Fi 與 MQTT 主機後會自動出現在這裡'
+      : '沒有收到資料，可能沒電、在睡眠中斷線或不在 Wi-Fi 範圍內';
+const rawLine = (reading: ClipReading | null) => reading
+  ? [reading.hx711_raw, reading.ads1115_raw, reading.touch_raw].map((v) => formatRaw(v)).join(' / ') : '—';
 
 // ----- real air boxes (moved here from the old /air dashboard)
 interface AirDevice { device_id: string; display_name?: string; version?: string; online: boolean; last_seen?: string }

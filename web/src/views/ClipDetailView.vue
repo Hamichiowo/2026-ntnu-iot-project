@@ -147,13 +147,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useTheme } from '../composables/useTheme';
 import DemoTag from '../components/clothes/DemoTag.vue';
 import RawCharts from '../components/clothes/RawCharts.vue';
 import { useRangeSelect, type Picked } from '../composables/useRangeSelect';
-import { PRESETS, SENSORS, useClothesHistory, withClip, type Field } from '../composables/useClothesData';
+import { PRESETS, SENSORS, selectClip, useClothesHistory, withClip, type Field } from '../composables/useClothesData';
 import { useClothesMock, type Method } from '../composables/useClothesMock';
 import { apiFetch } from '../composables/useAuth';
 import { DAY_MS, agoText, clock, formatTime, fromTaipeiInput, toTaipeiInput } from '../utils/format';
@@ -169,6 +169,9 @@ const {
 } = data;
 
 const device = computed(() => mock.clipById(String(route.params.id)));
+// The live readings and curves on this page are those of this clip.
+watch(() => device.value?.live ? device.value.id : null, (id) => selectClip(id), { immediate: true });
+onUnmounted(() => selectClip(null));
 const status = computed(() => device.value ? mock.clipStatus(device.value) : { online: false, tone: 'off' as const, label: '離線', lastSeenMs: null, uptimeMin: null });
 // Each clip's method is a server setting (clips.predict_method), demo clips included.
 const method = computed<Method>(() => (device.value ? mock.methodOf(device.value.id) : 'hx711_raw'));

@@ -10,7 +10,7 @@ import { computed, reactive, ref } from 'vue';
 import { BASE_MINUTES } from '../constants/garments';
 import { DAY_MS, TAIPEI_MS } from '../utils/format';
 import { clothesLiveState, type Field } from './useClothesData';
-import { dryAtOf, dryingApi, dryingState, useDrying, type Garment, type GarmentDraft, type RecordPatch, type Session } from './useDrying';
+import { dryAtOf, dryingApi, dryingState, useDrying, type ClipReading, type Garment, type GarmentDraft, type RecordPatch, type Session } from './useDrying';
 import { loadSettings, saveSettings, useSettings } from './useSettings';
 
 export type { DryRecord, Garment, GarmentDraft, RecordPatch, Session, SessionDetail } from './useDrying';
@@ -21,13 +21,14 @@ const MIN = 60000;
 
 export interface ClipDevice {
   id: string; name: string; live: boolean; demo: boolean; topic: string; chip: string; ip: string | null; fw: string | null;
+  deviceId: string | null; online: boolean; latest: ClipReading | null;  // real clips: from the server
   signal: '良好' | '偏弱'; bootMinAgo: number; offlineMinAgo: number | null; issue: string | null; lastBox: string;
 }
-type ClipLook = Omit<ClipDevice, 'id' | 'name' | 'live' | 'demo'>;
+type ClipLook = Omit<ClipDevice, 'id' | 'name' | 'live' | 'demo' | 'deviceId' | 'online' | 'latest'>;
 
 // How each clip looks on the device page. Only 衣夾-01 is real; the rest is part of the demo.
 // Clip ids are UUIDs, so the demo looks are found by the demo clip's name.
-const REAL_LOOK: ClipLook = { topic: 'clothes/raw', chip: 'ESP32-S3', ip: null, fw: null, signal: '良好', bootMinAgo: 0, offlineMinAgo: null, issue: null, lastBox: '' };
+const REAL_LOOK: ClipLook = { topic: '—', chip: 'ESP32-S3', ip: null, fw: null, signal: '良好', bootMinAgo: 0, offlineMinAgo: null, issue: null, lastBox: '' };
 const DEMO_LOOK: Record<string, ClipLook> = {
   '衣夾-02': { topic: 'clothes/02/raw', chip: 'ESP32-S3', ip: '192.168.0.43', fw: '0.3.1', signal: '偏弱', bootMinAgo: 47, offlineMinAgo: null, issue: '重量感測連續 12 筆讀取失敗，請檢查秤重感測器排線', lastBox: '' },
   '衣夾-03': { topic: 'clothes/03/raw', chip: 'ESP32-S3', ip: '192.168.0.44', fw: '0.3.1', signal: '良好', bootMinAgo: 130, offlineMinAgo: null, issue: null, lastBox: '' },
@@ -91,26 +92,32 @@ const weather = computed(() => {
 });
 
 export type ClipTone = 'on' | 'warn' | 'off';
-export interface ClipStatus { online: boolean; tone: ClipTone; label: string; lastSeenMs: number | null; uptimeMin: number | null }
+export interface ClipStatus {
+  online: boolean; tone: ClipTone; label: string; lastSeenMs: number | null; uptimeMin: number | null;
+  latest: ClipReading | null;  // newest reading of a real clip
+}
 
 // Online state per clip: the real clip from the server, the demo clips simulated.
 function clipStatus(d: ClipDevice): ClipStatus {
   if (d.live) {
-    const { latest, clipOnline } = clothesLiveState;
-    const lastSeenMs = latest.value ? Math.max(0, now.value - new Date(latest.value.timestamp).getTime()) : null;
-    const online = clipOnline.value;
-    const issue = online && latest.value && SENSOR_KEYS.some((k) => latest.value![k] === null);
-    return { online, tone: !online ? 'off' : issue ? 'warn' : 'on', label: !online ? (latest.value ? '資料中斷' : '離線') : issue ? '感測異常' : '在線', lastSeenMs, uptimeMin: null };
+    // The clip the live poll follows is fresher than the clip list (which reloads every 30 s).
+    const live = clothesLiveState;
+    const followed = live.clipSettings.value?.id === d.id && live.loaded.value;
+    const latest = followed ? live.latest.value : d.latest;
+    const lastSeenMs = latest ? Math.max(0, now.value - new Date(latest.timestamp).getTime()) : null;
+    const online = followed ? live.clipOnline.value : d.online && lastSeenMs !== null && lastSeenMs <= live.staleAfterMs.value;
+    const issue = online && latest && SENSOR_KEYS.some((k) => latest[k] === null);
+    return { online, tone: !online ? 'off' : issue ? 'warn' : 'on', label: !online ? (latest ? '資料中斷' : '離線') : issue ? '感測異常' : '在線', lastSeenMs, uptimeMin: null, latest };
   }
-  if (d.offlineMinAgo != null) return { online: false, tone: 'off', label: '離線', lastSeenMs: d.offlineMinAgo * MIN, uptimeMin: null };
-  return { online: true, tone: d.issue ? 'warn' : 'on', label: d.issue ? '感測異常' : '在線',
+  if (d.offlineMinAgo != null) return { online: false, tone: 'off', label: '離線', lastSeenMs: d.offlineMinAgo * MIN, uptimeMin: null, latest: null };
+  return { online: true, tone: d.issue ? 'warn' : 'on', label: d.issue ? '感測異常' : '在線', latest: null,
     lastSeenMs: (1 + (d.name.charCodeAt(d.name.length - 1) % 3)) * 1000, uptimeMin: d.bootMinAgo + Math.round((now.value - loadedAt) / MIN) };
 }
 
 // Clips from the server, dressed with how they look. The server leaves demo clips out with the demo off.
 const devices = computed<ClipDevice[]>(() => clips.value.map((c) => ({
   ...(c.demo ? DEMO_LOOK[c.name] ?? PLAIN_DEMO_LOOK : { ...REAL_LOOK, topic: c.topic ?? '—' }),
-  id: c.id, name: c.name, live: !c.demo, demo: c.demo,
+  id: c.id, name: c.name, live: !c.demo, demo: c.demo, deviceId: c.deviceId, online: c.online, latest: c.latest,
 })));
 const clipById = (id: string) => devices.value.find((d) => d.id === id);
 const methodOf = (clipId: string): Method => clips.value.find((c) => c.id === clipId)?.predictMethod ?? 'hx711_raw';
