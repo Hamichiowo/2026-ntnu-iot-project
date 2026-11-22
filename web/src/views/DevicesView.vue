@@ -9,7 +9,12 @@
     </section>
 
     <p v-if="mock.actionError.value" class="ui-note ui-note--error" role="alert">{{ mock.actionError.value }}</p>
-    <section aria-label="衣夾" class="grid">
+    <section aria-label="衣夾" class="section">
+      <div class="row-head">
+        <h2 class="section-title">衣夾</h2>
+        <button type="button" class="ui-btn" @click="fwDialog?.open()">更新韌體</button>
+      </div>
+      <div class="grid">
       <article v-for="c in clips" :key="c.device.id" class="dev" :class="{ warn: c.status.tone === 'warn', off: c.status.tone === 'off' }">
         <div class="dev-head">
           <h2>{{ c.device.name }} <small v-if="c.device.live" class="real">實體裝置</small><DemoTag v-else /></h2>
@@ -17,6 +22,7 @@
         </div>
         <div class="facts">
           <div><span>最後回報</span><b>{{ c.status.lastSeenMs == null ? '尚未收到' : agoText(c.status.lastSeenMs) }}</b></div>
+          <div><span>韌體版本</span><b class="mono">{{ c.version }}</b></div>
           <template v-if="c.status.online">
             <div v-if="c.device.live"><span>重量 / 電阻 / 電容</span><b class="mono raw">{{ rawLine }}</b></div>
             <template v-else>
@@ -26,10 +32,18 @@
           </template>
           <div v-if="c.session"><span>正在晾</span><b>{{ c.session }}</b></div>
         </div>
+        <div v-if="c.job" class="fw-line" role="status">
+          <div class="fw-text">
+            <b :class="c.job.phase === 'offline' ? 'muted-2' : 'ac-tx'">韌體 {{ c.job.to }}：{{ FIRMWARE_PHASE[c.job.phase] }}</b>
+            <button v-if="c.job.phase === 'wait' || c.job.phase === 'offline'" type="button" class="fw-cancel" @click="firmware.cancel(c.device.id)">取消</button>
+            <span v-else class="mono muted">{{ c.job.pct }}%</span>
+          </div>
+          <span v-if="c.job.phase !== 'offline'" class="ui-bar"><span :style="{ width: `${c.job.pct}%` }"></span></span>
+        </div>
         <p v-if="c.device.issue && c.status.online" class="issue">{{ c.device.issue }}</p>
         <p v-else-if="c.status.tone === 'warn'" class="issue">有感測器本筆讀取失敗，請檢查排線</p>
-        <p v-else-if="!c.status.online" class="muted-2">{{ c.device.live ? connectionText : '可能沒電或不在 Wi-Fi 範圍內，重新上線後會自動恢復' }}</p>
-        <p v-else class="muted-2">重量、電阻、電容感測皆正常</p>
+        <p v-else-if="!c.status.online && !c.job" class="muted-2">{{ c.device.live ? connectionText : '可能沒電或不在 Wi-Fi 範圍內，重新上線後會自動恢復' }}</p>
+        <p v-else-if="!c.job" class="muted-2">重量、電阻、電容感測皆正常</p>
         <div class="dev-foot">
           <code class="mono muted">{{ c.device.topic }}</code>
           <div class="foot-btns">
@@ -38,6 +52,7 @@
           </div>
         </div>
       </article>
+      </div>
     </section>
 
     <section aria-label="空氣盒子" class="section">
@@ -80,8 +95,8 @@
       </div>
     </section>
 
-    <!-- The connection log is demo only; there is no real event source yet. -->
-    <section v-if="mock.demoEnabled.value" class="panel">
+    <!-- The connection log is demo only (no real event source yet), plus this page's firmware updates. -->
+    <section v-if="events.length" class="panel">
       <h2>連線事件</h2>
       <div class="ui-table-wrap">
         <table class="ui-table">
@@ -97,6 +112,7 @@
 
     <p v-if="mock.demoEnabled.value" class="demo-note">標了「示範」的衣夾（衣夾-02～08）和連線事件是示範資料，狀態為模擬；衣夾-01 與空氣盒子為實際資料。可在設定關閉示範資料。</p>
     <p v-else class="demo-note">示範資料已關閉，只顯示實際的衣夾與空氣盒子。</p>
+    <FirmwareDialog ref="fwDialog" />
   </div>
 </template>
 
@@ -105,12 +121,16 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useClothesLive } from '../composables/useClothesData';
 import { useClothesMock } from '../composables/useClothesMock';
 import DemoTag from '../components/clothes/DemoTag.vue';
+import FirmwareDialog from '../components/clothes/FirmwareDialog.vue';
+import { FIRMWARE_PHASE, useFirmware } from '../composables/useFirmware';
 import { useWebSocket } from '../composables/useWebSocket';
 import { apiFetch } from '../composables/useAuth';
 import { agoText, clock, dayLabel, formatAir, formatRaw, minutesText } from '../utils/format';
 
 const { latest, connectionText } = useClothesLive();
 const mock = useClothesMock();
+const firmware = useFirmware();
+const fwDialog = ref<InstanceType<typeof FirmwareDialog>>();
 const MIN = 60000;
 
 function removeClip(device: { id: string; name: string }) {
@@ -119,7 +139,8 @@ function removeClip(device: { id: string; name: string }) {
 
 const clips = computed(() => mock.devices.value.map((device) => {
   const session = mock.state.sessions.find((s) => s.clipId === device.id);
-  return { device, status: mock.clipStatus(device), session: session ? mock.garmentById(session.garmentId)?.name ?? '' : '' };
+  return { device, status: mock.clipStatus(device), session: session ? mock.garmentById(session.garmentId)?.name ?? '' : '',
+    version: firmware.installed[device.id] ?? device.fw ?? '未回報', job: firmware.jobOf(device.id) };
 }));
 const rawLine = computed(() => latest.value
   ? [latest.value.hx711_raw, latest.value.ads1115_raw, latest.value.touch_raw].map((v) => formatRaw(v)).join(' / ') : '—');
@@ -178,10 +199,11 @@ const totalCount = computed(() => clips.value.length + airDevices.value.length);
 const rate = computed(() => clips.value.filter((c) => c.status.online).length + airDevices.value.filter((d) => d.online).length);
 const attention = computed(() => clips.value.filter((c) => c.status.tone !== 'on').length + airDevices.value.filter((d) => !d.online).length);
 
-// Demo connection log, relative to now.
+// Firmware updates done on this page, then the demo connection log (relative to now).
 const events = computed(() => {
   const t = mock.now.value;
-  const list = [
+  const updates = firmware.events.value.map((e) => ({ ago: (t - e.at) / MIN, device: e.device, text: e.text, tone: e.tone }));
+  const list = !mock.demoEnabled.value ? updates : [...updates,
     { ago: 61, device: '衣夾-02', text: '重量感測讀取失敗', tone: 'wa-tx' },
     { ago: 107, device: '衣夾-02', text: '上線', tone: 'ac-tx' },
     { ago: 323, device: '衣夾-01', text: '斷線 14 秒後重新連線', tone: 'muted-2' },
@@ -222,5 +244,9 @@ const events = computed(() => {
 .air-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .search { flex: 0 1 320px; }
 .dev .facts + p { margin: 0; }
+.fw-line { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--ac-bd); background: var(--ac-soft); }
+.fw-text { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.fw-cancel { border: 0; padding: 0; background: none; color: var(--tx2); font: inherit; text-decoration: underline; cursor: pointer; }
+.fw-cancel:hover { color: var(--tx); }
 @media (max-width: 640px) { .dev { padding: 20px; } }
 </style>
