@@ -22,7 +22,6 @@
     <section aria-label="統計" class="ui-stats">
       <div class="ui-stat"><span class="ui-stat__label">晾乾次數</span><span class="ui-stat__value">{{ dried.length }}<small> 次</small></span></div>
       <div class="ui-stat"><span class="ui-stat__label">平均乾燥時間</span><span class="ui-stat__value">{{ avgDry == null ? '—' : shortDuration(avgDry) }}</span></div>
-      <div class="ui-stat"><span class="ui-stat__label">下次預測</span><span class="ui-stat__value ac-tx">{{ shortDuration(nextPrediction) }}</span></div>
     </section>
 
     <div class="layout">
@@ -93,7 +92,6 @@ const activeSession = computed(() => garment.value ? mock.state.sessions.find((s
 const records = computed(() => garment.value ? mock.state.records.filter((r) => r.garmentId === garment.value!.id) : []);
 const dried = computed(() => records.value.filter((r) => r.outcome === 'dry' && r.actualMin != null));
 const avgDry = computed(() => dried.value.length ? Math.round(dried.value.reduce((sum, r) => sum + r.actualMin!, 0) / dried.value.length) : null);
-const nextPrediction = computed(() => garment.value ? mock.predictMinutes(garment.value) : 0);
 
 // ---------------------------------------------------------------- style form
 const fromGarment = (g: GarmentDraft): GarmentDraft => ({ name: g.name, style: g.style, color: g.color, material: g.material });
