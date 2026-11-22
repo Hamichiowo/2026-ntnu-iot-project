@@ -71,9 +71,25 @@ const DAY = 24 * 60 * 60000;
 const hasDividers = computed(() => !!props.dividers?.length);
 const ohm = (key: Field) => key === 'ads1115_raw' && hasDividers.value;
 const latestOhm = computed(() => props.latest ? ohmText(props.latest.ads1115_raw, new Date(props.latest.timestamp).getTime(), props.dividers) : null);
+// The settings used inside the window on screen (not just the newest one), each with its own limit.
+const shortTime = (time: number) => new Date(time).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false,
+  month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 const dividerNote = computed(() => {
-  const d = props.dividers?.[props.dividers.length - 1];
-  return d ? `分壓 ${formatOhm(d.divider_ohm)}，乾布超過 ${formatOhm(ohmMax(d))} 時顯示為上限` : '';
+  const list = props.dividers ?? [];
+  const start = props.range.start.getTime(), end = props.range.end.getTime();
+  const used = list
+    .map((d, i) => ({ d, from: new Date(d.since).getTime(), to: i + 1 < list.length ? new Date(list[i + 1].since).getTime() : Infinity }))
+    .filter((x) => x.from < end && x.to > start);
+  const describe = (d: Divider) => `分壓 ${formatOhm(d.divider_ohm)}、上限 ${formatOhm(ohmMax(d))}`;
+  const parts: string[] = [];
+  if (list.length && new Date(list[0].since).getTime() > start) parts.push(`${shortTime(new Date(list[0].since).getTime())} 前沒有設定，不換算`);
+  if (used.length === 1 && !parts.length) return `${describe(used[0].d)}，超過上限時顯示為上限`;
+  used.forEach((x, i) => {
+    const before = i + 1 < used.length ? `${shortTime(x.to)} 前` : '';
+    const after = i > 0 || parts.length ? `${shortTime(x.from)} 起` : '';
+    parts.push(`${after}${after && before ? '、' : ''}${before}${describe(x.d)}`);
+  });
+  return `${parts.join('；')}；超過上限時顯示為上限`;
 });
 // Plotted value: ohms with the setting in force at that time; open readings sit at that setting's
 // upper limit (shown as "> limit"); nothing before the first setting.
