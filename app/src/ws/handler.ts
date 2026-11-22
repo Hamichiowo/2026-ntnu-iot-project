@@ -4,12 +4,13 @@
 
 import { createBunWebSocket } from 'hono/bun';
 import type { ServerWebSocket } from 'bun';
+import type { WSContext } from 'hono/ws';
 import { globalEventBus } from '../events/bus';
 
 export const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
 
 // Keep track of active client connections
-const activeClients = new Set<ServerWebSocket>();
+const activeClients = new Set<WSContext<ServerWebSocket>>();
 
 export function initWebSocketBroadcaster(): void {
   // Listen to EventBus and broadcast to all connected WebSocket clients
@@ -62,11 +63,11 @@ export function initWebSocketBroadcaster(): void {
   });
 }
 
-export function registerClient(ws: ServerWebSocket): void {
+export function registerClient(ws: WSContext<ServerWebSocket>): void {
   activeClients.add(ws);
 }
 
-export function unregisterClient(ws: ServerWebSocket): void {
+export function unregisterClient(ws: WSContext<ServerWebSocket>): void {
   activeClients.delete(ws);
 }
 
