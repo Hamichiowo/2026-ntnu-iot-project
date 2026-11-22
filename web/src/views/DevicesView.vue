@@ -26,7 +26,7 @@
           <div><span>韌體版本</span><b class="mono">{{ c.version }}</b></div>
           <div v-if="c.device.live"><span>裝置編號</span><b class="mono">{{ c.device.deviceId ?? '尚未連線' }}</b></div>
           <template v-if="c.status.online">
-            <div v-if="c.device.live"><span>重量 / 電阻 / 電容</span><b class="mono raw">{{ rawLine(c.status.latest) }}</b></div>
+            <div v-if="c.device.live"><span>重量 / 電阻 / 電容</span><b class="mono raw">{{ rawLine(c.status.latest, c.device.dividers) }}</b></div>
             <template v-else>
               <div><span>訊號</span><b>{{ c.device.signal }}</b></div>
               <div><span>運行時間</span><b>{{ c.status.uptimeMin == null ? '—' : minutesText(c.status.uptimeMin) }}</b></div>
@@ -126,6 +126,7 @@ import DemoTag from '../components/clothes/DemoTag.vue';
 import FirmwareDialog from '../components/clothes/FirmwareDialog.vue';
 import { FIRMWARE_PHASE, useFirmware } from '../composables/useFirmware';
 import type { ClipReading } from '../composables/useDrying';
+import { ohmText, type Divider } from '../utils/resistance';
 import { useWebSocket } from '../composables/useWebSocket';
 import { apiFetch } from '../composables/useAuth';
 import { agoText, clock, dayLabel, formatAir, formatRaw, minutesText } from '../utils/format';
@@ -151,8 +152,10 @@ const offlineText = (c: { device: { deviceId: string | null }; status: { latest:
   /異常|尚未連線/.test(connectionText.value) ? connectionText.value
     : !c.device.deviceId && !c.status.latest ? '等待衣夾第一次連線：設定好衣夾的 Wi-Fi 與 MQTT 主機後會自動出現在這裡'
       : '沒有收到資料，可能沒電、在睡眠中斷線或不在 Wi-Fi 範圍內';
-const rawLine = (reading: ClipReading | null) => reading
-  ? [reading.hx711_raw, reading.ads1115_raw, reading.touch_raw].map((v) => formatRaw(v)).join(' / ') : '—';
+// Weight and capacitance stay raw counts; resistance in ohms once the clip has a divider setting.
+const rawLine = (reading: ClipReading | null, dividers: Divider[]) => reading
+  ? [formatRaw(reading.hx711_raw), ohmText(reading.ads1115_raw, new Date(reading.timestamp).getTime(), dividers) ?? formatRaw(reading.ads1115_raw),
+    formatRaw(reading.touch_raw)].join(' / ') : '—';
 
 // ----- real air boxes (moved here from the old /air dashboard)
 interface AirDevice { device_id: string; display_name?: string; version?: string; online: boolean; last_seen?: string }

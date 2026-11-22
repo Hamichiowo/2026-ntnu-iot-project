@@ -12,6 +12,7 @@ import { DAY_MS, TAIPEI_MS } from '../utils/format';
 import { clothesLiveState, type Field } from './useClothesData';
 import { dryAtOf, dryingApi, dryingState, useDrying, type ClipReading, type Garment, type GarmentDraft, type RecordPatch, type Session } from './useDrying';
 import { loadSettings, saveSettings, useSettings } from './useSettings';
+import type { Divider } from '../utils/resistance';
 
 export type { DryRecord, Garment, GarmentDraft, RecordPatch, Session, SessionDetail } from './useDrying';
 export type Method = Field;
@@ -22,9 +23,10 @@ const MIN = 60000;
 export interface ClipDevice {
   id: string; name: string; live: boolean; demo: boolean; topic: string; chip: string; ip: string | null; fw: string | null;
   deviceId: string | null; online: boolean; latest: ClipReading | null;  // real clips: from the server
+  dividers: Divider[];
   signal: '良好' | '偏弱'; bootMinAgo: number; offlineMinAgo: number | null; issue: string | null; lastBox: string;
 }
-type ClipLook = Omit<ClipDevice, 'id' | 'name' | 'live' | 'demo' | 'deviceId' | 'online' | 'latest'>;
+type ClipLook = Omit<ClipDevice, 'id' | 'name' | 'live' | 'demo' | 'deviceId' | 'online' | 'latest' | 'dividers'>;
 
 // How each clip looks on the device page. Only 衣夾-01 is real; the rest is part of the demo.
 // Clip ids are UUIDs, so the demo looks are found by the demo clip's name.
@@ -117,7 +119,7 @@ function clipStatus(d: ClipDevice): ClipStatus {
 // Clips from the server, dressed with how they look. The server leaves demo clips out with the demo off.
 const devices = computed<ClipDevice[]>(() => clips.value.map((c) => ({
   ...(c.demo ? DEMO_LOOK[c.name] ?? PLAIN_DEMO_LOOK : { ...REAL_LOOK, topic: c.topic ?? '—' }),
-  id: c.id, name: c.name, live: !c.demo, demo: c.demo, deviceId: c.deviceId, online: c.online, latest: c.latest,
+  id: c.id, name: c.name, live: !c.demo, demo: c.demo, deviceId: c.deviceId, online: c.online, latest: c.latest, dividers: c.dividers,
 })));
 const clipById = (id: string) => devices.value.find((d) => d.id === id);
 const methodOf = (clipId: string): Method => clips.value.find((c) => c.id === clipId)?.predictMethod ?? 'hx711_raw';
@@ -164,6 +166,9 @@ async function startSession(clipId: string, garment: { id: string } | GarmentDra
 const endSession = (sessionId: string, how: 'dry' | 'early' | 'cancel') => attempt(() => dryingApi.endSession(sessionId, how));
 const setMethod = (clipId: string, method: Method) => attempt(() => dryingApi.setClipMethod(clipId, method));
 const removeDevice = (clipId: string) => attempt(() => dryingApi.removeClip(clipId));
+const addDivider = (clipId: string, divider: { since: string; divider_ohm: number; open_count: number }) =>
+  attempt(() => dryingApi.addDivider(clipId, divider));
+const deleteDivider = (clipId: string, dividerId: string) => attempt(() => dryingApi.deleteDivider(clipId, dividerId));
 const reset = () => attempt(() => dryingApi.resetDemo());
 function clearFocus() { focus.value = null; }
 
@@ -174,6 +179,6 @@ export function useClothesMock() {
   return {
     state, now, weather, devices, activeClipIds, busyGarmentIds, demoEnabled, actionError, loaded: dryingState.loaded, loadError: dryingState.loadError,
     garmentById, dryCount, predictMinutes, clipStatus, clipById, methodOf, garmentNameTaken,
-    updateGarment, addGarment, deleteGarment, updateRecord, deleteRecord, swapGarment, startSession, endSession, setMethod, removeDevice, clearFocus, reset, setDemoEnabled,
+    updateGarment, addGarment, deleteGarment, updateRecord, deleteRecord, swapGarment, startSession, endSession, setMethod, removeDevice, addDivider, deleteDivider, clearFocus, reset, setDemoEnabled,
   };
 }

@@ -42,9 +42,9 @@
               <div class="ui-field"><label for="cd-start">開始（台北）</label><input id="cd-start" v-model="customStart" class="ui-input ui-input--sm" type="datetime-local" required /></div>
               <div class="ui-field"><label for="cd-end">結束（台北）</label><input id="cd-end" v-model="customEnd" class="ui-input ui-input--sm" type="datetime-local" required /></div>
               <button type="submit" class="ui-btn ui-btn--primary">查詢</button>
-              <span class="muted hint">最長 24 小時</span>
+              <span class="muted hint">最長 7 天</span>
             </form>
-            <p class="muted hint">各感測器使用獨立刻度；缺值或資料中斷顯示為斷線。按住曲線拖曳可選取時段，再拖曳兩側直線微調。</p>
+            <p class="muted hint">各感測器使用獨立刻度；缺值或資料中斷顯示為斷線。按住曲線拖曳可選取時段，再按「放大」只看那一段。</p>
             <p v-if="rangeError" class="ui-note ui-note--error" role="alert">{{ rangeError }}</p>
             <p v-if="historyError" class="ui-note ui-note--error" role="alert">{{ historyError }}</p>
             <p v-if="truncated" class="ui-note">資料較多，目前顯示最近 5,000 筆。</p>
@@ -63,7 +63,8 @@
 
           <template v-else>
             <RawCharts :records="records" :air-records="airRecords" :range="range" :stale-after-ms="staleAfterMs" :bucket-seconds="bucketSeconds"
-              :sensors="orderedSensors" :chosen="method" :latest="latest" :air-device-id="air?.device_id" :plugins="[selectPlugin]" />
+              :sensors="orderedSensors" :chosen="method" :latest="latest" :air-device-id="air?.device_id" :plugins="[selectPlugin]"
+              :dividers="device.dividers" />
           </template>
 
           <p class="muted small">
@@ -79,16 +80,44 @@
             <span class="muted small">{{ latest ? `${formatTime(latest.timestamp)} 收到` : '尚未收到資料' }}</span>
           </section>
 
-          <form class="panel panel--sm" @submit.prevent="downloadCsv">
+          <section class="panel panel--sm">
             <h2>匯出原始資料</h2>
-            <p class="muted small">原始資料（不再平均），附空氣盒子溫溼度，台北時間，最長 {{ EXPORT_MAX_DAYS }} 天。可在曲線上拖曳選取時段。</p>
-            <div class="ui-field"><label for="ex-start">開始</label><input id="ex-start" v-model="exportStart" class="ui-input ui-input--sm" type="datetime-local" step="1" required /></div>
-            <div class="ui-field"><label for="ex-end">結束</label><input id="ex-end" v-model="exportEnd" class="ui-input ui-input--sm" type="datetime-local" step="1" required /></div>
-            <div class="stack">
-              <button type="button" class="ui-btn" @click="useChartRange">使用目前圖表範圍</button>
-              <button type="submit" class="ui-btn ui-btn--primary" :disabled="exporting">{{ exporting ? '匯出中…' : '下載 CSV' }}</button>
-            </div>
+            <p class="muted small">匯出歷史曲線目前的時間範圍：<b class="tx">{{ exportRangeText }}</b>。要匯出其他時段，先在左邊換時間範圍或拖曳放大。</p>
+            <p class="muted small">原始資料（不平均），附電阻歐姆值與空氣盒子溫濕度，台北時間。</p>
+            <button type="button" class="ui-btn ui-btn--primary" :disabled="exporting" @click="downloadCsv">{{ exporting ? '匯出中…' : '下載 CSV' }}</button>
             <p v-if="exportMessage" class="small" :class="exportFailed ? 'err' : 'ac-tx'" role="status">{{ exportMessage }}</p>
+          </section>
+
+          <form class="panel panel--sm" @submit.prevent="saveDivider">
+            <h2>電阻換算</h2>
+            <template v-if="currentDivider">
+              <dl class="kv">
+                <div><dt>分壓電阻</dt><dd>{{ formatOhm(currentDivider.divider_ohm) }}</dd></div>
+                <div><dt>開路讀值</dt><dd class="mono">{{ currentDivider.open_count.toLocaleString() }}</dd></div>
+                <div><dt>可量到</dt><dd>{{ formatOhm(ohmMax(currentDivider)) }} 以下</dd></div>
+                <div><dt>生效時間</dt><dd>{{ formatTime(currentDivider.since) }}</dd></div>
+              </dl>
+            </template>
+            <p v-else class="ui-note">還沒設定，電阻先以原始計數顯示。填入分壓電阻並在「什麼都沒夾」時記下讀值，就會換算成歐姆。</p>
+            <details :open="!currentDivider">
+              <summary>{{ currentDivider ? '換了電阻？新增一筆設定' : '設定分壓電阻' }}</summary>
+              <div class="ui-field"><label for="dv-ohm">分壓電阻（kΩ）</label><input id="dv-ohm" v-model.number="dividerKohm" class="ui-input ui-input--sm" type="number" min="1" max="100000" step="any" required /></div>
+              <div class="ui-field"><label for="dv-open">開路讀值（兩電極之間什麼都沒夾）</label>
+                <input id="dv-open" v-model.number="dividerOpen" class="ui-input ui-input--sm" type="number" min="1000" max="32767" step="1" required /></div>
+              <button type="button" class="ui-btn ui-btn--ghost" :disabled="latest?.ads1115_raw == null" @click="dividerOpen = latest?.ads1115_raw ?? dividerOpen">用最新讀值（{{ formatRaw(latest?.ads1115_raw) }}）</button>
+              <div class="ui-field"><label for="dv-since">從什麼時候開始（台北）</label><input id="dv-since" v-model="dividerSince" class="ui-input ui-input--sm" type="datetime-local" required /></div>
+              <p class="muted small">之前的資料仍用舊設定換算。換了電阻請把時間設在換電阻的時候。</p>
+              <button type="submit" class="ui-btn ui-btn--primary" :disabled="savingDivider">{{ savingDivider ? '儲存中…' : '儲存設定' }}</button>
+            </details>
+            <details v-if="device.dividers.length">
+              <summary>設定紀錄（{{ device.dividers.length }}）</summary>
+              <ul class="dividers">
+                <li v-for="d in [...device.dividers].reverse()" :key="d.id">
+                  <span>{{ formatTime(d.since) }} 起 · {{ formatOhm(d.divider_ohm) }} · 開路 {{ d.open_count.toLocaleString() }}</span>
+                  <button type="button" class="ui-btn ui-btn--ghost" @click="removeDivider(d)">刪除</button>
+                </li>
+              </ul>
+            </details>
           </form>
 
           <section class="panel panel--sm">
@@ -103,7 +132,7 @@
         </aside>
       </div>
 
-      <p class="demo-note">原始數值為感測器直接讀值，尚未換算重量、電阻或電容。乾燥預測之後會依選擇的衣物計算，目前尚未實作；「預測使用」的切換目前只影響顯示順序。</p>
+      <p class="demo-note">重量與電容為感測器直接讀值，尚未換算；電阻在設定分壓電阻後換算成歐姆。乾燥預測之後會依選擇的衣物計算，目前尚未實作；「預測使用」的切換目前只影響顯示順序。</p>
     </template>
 
     <!-- ================= demo clip ================= -->
@@ -153,10 +182,11 @@ import { useTheme } from '../composables/useTheme';
 import DemoTag from '../components/clothes/DemoTag.vue';
 import RawCharts from '../components/clothes/RawCharts.vue';
 import { useRangeSelect, type Picked } from '../composables/useRangeSelect';
-import { PRESETS, SENSORS, selectClip, useClothesHistory, withClip, type Field } from '../composables/useClothesData';
+import { HISTORY_WINDOW_MAX_MS, PRESETS, SENSORS, selectClip, useClothesHistory, withClip, type Field } from '../composables/useClothesData';
 import { useClothesMock, type Method } from '../composables/useClothesMock';
 import { apiFetch } from '../composables/useAuth';
-import { DAY_MS, agoText, clock, formatTime, fromTaipeiInput, toTaipeiInput } from '../utils/format';
+import { agoText, clock, formatRaw, formatTime, fromTaipeiInput, toTaipeiInput } from '../utils/format';
+import { dividerAt, formatOhm, ohmMax, type Divider } from '../utils/resistance';
 
 const route = useRoute();
 const { palette } = useTheme();
@@ -185,27 +215,22 @@ const latestJson = computed(() => latest.value
   : '—');
 
 // ---------------------------------------------------------------- CSV export
-// Own start/end so exporting never changes what the charts show.
-const EXPORT_MAX_DAYS = 7;
-const exportStart = ref(toTaipeiInput(range.value.start, true));
-const exportEnd = ref(toTaipeiInput(range.value.end, true));
+// Exports the window the charts show: a preset ("last hour") ends now, a custom window is fixed.
 const exporting = ref(false);
 const exportMessage = ref('');
 const exportFailed = ref(false);
-const setExportRange = (start: Date, end: Date) => {
-  exportStart.value = toTaipeiInput(start, true); exportEnd.value = toTaipeiInput(end, true);
-};
-function useChartRange() {
-  setExportRange(range.value.start, range.value.end);
-  exportFailed.value = false; exportMessage.value = '已套用目前圖表的時間範圍。';
-}
 const exportNotice = (text: string, failed = false) => { exportMessage.value = text; exportFailed.value = failed; };
+function exportWindow() {
+  if (mode.value === 'custom') return { start: range.value.start, end: range.value.end };
+  const end = new Date();
+  return { start: new Date(end.getTime() - Number(mode.value) * 60000), end };
+}
+const exportRangeText = computed(() => mode.value === 'custom'
+  ? `${formatTime(range.value.start)} – ${formatTime(range.value.end)}`
+  : `最近 ${PRESETS.find((p) => String(p.minutes) === mode.value)?.label ?? ''}（到按下的時候）`);
 
 async function downloadCsv() {
-  const start = fromTaipeiInput(exportStart.value), end = fromTaipeiInput(exportEnd.value);
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return exportNotice('請輸入開始與結束時間。', true);
-  if (start >= end) return exportNotice('結束時間必須晚於開始時間。', true);
-  if (end.getTime() - start.getTime() > EXPORT_MAX_DAYS * DAY_MS) return exportNotice(`一次最多匯出 ${EXPORT_MAX_DAYS} 天。`, true);
+  const { start, end } = exportWindow();
   exporting.value = true; exportNotice('');
   try {
     const params = withClip(new URLSearchParams({ start: start.toISOString(), end: end.toISOString() }));
@@ -231,32 +256,46 @@ async function downloadCsv() {
 }
 
 // ---------------------------------------------------------------- drag-to-select
-// Drag across any chart to pick an export range (useRangeSelect); the edges can then be adjusted.
+// Drag across any chart to pick a stretch (useRangeSelect), then zoom the charts to it; the export
+// then covers exactly that stretch.
 const pickedText = (picked: Picked) => `${formatTime(picked.start)} – ${formatTime(picked.end)}`;
-const { selection, plugin: selectPlugin, dragging } = useRangeSelect({
-  onMove: (picked, resizing) => { if (resizing) setExportRange(new Date(picked.start), new Date(picked.end)); },
-  onPick: (picked, resizing) => {
-    setExportRange(new Date(picked.start), new Date(picked.end));
-    exportNotice(`已${resizing ? '調整' : '從圖表選取'} ${pickedText(picked)}，可拖曳兩側直線微調，或直接下載。`);
-  },
-});
-// Typing a valid range in the export fields moves the lines too, so both stay in agreement.
-watch([exportStart, exportEnd], ([startText, endText]) => {
-  if (dragging()) return;  // the drag itself is writing these fields
-  const start = fromTaipeiInput(startText).getTime(), end = fromTaipeiInput(endText).getTime();
-  if (Number.isFinite(start) && Number.isFinite(end) && start < end) selection.value = { start, end };
-});
-function clearSelection() { selection.value = null; exportNotice(''); }
+const { selection, plugin: selectPlugin } = useRangeSelect();
+function clearSelection() { selection.value = null; }
 
 async function zoomToSelection() {
   const picked = selection.value;
-  if (!picked) return;
-  if (picked.end - picked.start > DAY_MS) return exportNotice('選取範圍超過 24 小時，無法放大檢視，但仍可匯出。', true);
+  if (!picked || picked.end - picked.start > HISTORY_WINDOW_MAX_MS) return;
+  selection.value = null;
   mode.value = 'custom';
   await nextTick();  // let the mode watcher fill its defaults first, then override them
   customStart.value = toTaipeiInput(new Date(picked.start));
   customEnd.value = toTaipeiInput(new Date(picked.end + 59999));  // round the end up to the whole minute
   applyCustom();
+}
+
+// ---------------------------------------------------------------- resistance divider
+// Settings live on the server per clip; each applies from its time on, so old data keeps its resistor.
+const currentDivider = computed(() => device.value ? dividerAt(device.value.dividers, Date.now()) : null);
+const dividerKohm = ref(1000);
+const dividerOpen = ref<number>(22740);
+const dividerSince = ref(toTaipeiInput(new Date()));
+const savingDivider = ref(false);
+watch(currentDivider, (d) => {
+  if (d) { dividerKohm.value = d.divider_ohm / 1000; dividerOpen.value = d.open_count; }
+}, { immediate: true });
+async function saveDivider() {
+  if (!device.value) return;
+  const since = fromTaipeiInput(dividerSince.value);
+  savingDivider.value = true;
+  await mock.addDivider(device.value.id, {
+    since: since.toISOString(), divider_ohm: Math.round(dividerKohm.value * 1000), open_count: Math.round(dividerOpen.value),
+  });
+  savingDivider.value = false;
+  dividerSince.value = toTaipeiInput(new Date());
+}
+function removeDivider(d: Divider) {
+  if (!device.value || !d.id) return;
+  if (window.confirm(`刪除 ${formatTime(d.since)} 起的分壓設定？這段時間的資料會改用前一筆設定換算。`)) void mock.deleteDivider(device.value.id, d.id);
 }
 
 // ---------------------------------------------------------------- demo clip
@@ -289,6 +328,13 @@ const sessionStart = computed(() => {
 .inline-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
 .inline-form .ui-field { flex: 1 1 200px; }
 .hint { font-size: 0.875rem; }
+.dividers { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.875rem; }
+.dividers li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+details { display: flex; flex-direction: column; gap: 10px; }
+details > summary { cursor: pointer; color: var(--tx2); font-size: 0.9375rem; }
+details[open] > summary { margin-bottom: 10px; }
+details .ui-field { margin-bottom: 10px; }
+.tx { color: var(--tx); font-weight: 500; }
 .sel-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 0.9375rem; }
 .empty { align-items: center; text-align: center; padding: 64px 20px; border-style: dashed; }
 

@@ -40,11 +40,15 @@ describe('Clothes MQTT contract', () => {
     }
   });
   it('writes CSV lines in Taipei and UTC time with empty cells for failed reads', () => {
-    expect(CSV_HEADER).toBe('time_taipei,timestamp_utc,hx711_raw,ads1115_raw,touch_raw,air_temp_c,air_humi_pct\n');
+    expect(CSV_HEADER).toBe('time_taipei,timestamp_utc,hx711_raw,ads1115_raw,ads1115_ohm,touch_raw,air_temp_c,air_humi_pct\n');
     expect(clothesCsvLine({ id: '1', timestamp: new Date('2026-11-13T17:15:53.250Z'), hx711_raw: -1500, ads1115_raw: null, touch_raw: 0 }))
-      .toBe('2026-11-14 01:15:53.250,2026-11-13T17:15:53.250Z,-1500,,0,,\n');
+      .toBe('2026-11-14 01:15:53.250,2026-11-13T17:15:53.250Z,-1500,,,0,,\n');
     expect(clothesCsvLine({ id: '1', timestamp: '2026-11-13T17:15:53Z', hx711_raw: 1, ads1115_raw: 2, touch_raw: 3, air_temp: 24.5, air_humi: 61.25 }))
-      .toBe('2026-11-14 01:15:53.000,2026-11-13T17:15:53.000Z,1,2,3,24.5,61.25\n');
+      .toBe('2026-11-14 01:15:53.000,2026-11-13T17:15:53.000Z,1,2,,3,24.5,61.25\n');
+    expect(clothesCsvLine({ id: '1', timestamp: '2026-11-13T17:15:53Z', hx711_raw: 1, ads1115_raw: 5000, touch_raw: 3, ads1115_ohm: 245123.6 }))
+      .toBe('2026-11-14 01:15:53.000,2026-11-13T17:15:53.000Z,1,5000,245124,3,,\n');
+    expect(clothesCsvLine({ id: '1', timestamp: '2026-11-13T17:15:53Z', hx711_raw: 1, ads1115_raw: 22740, touch_raw: 3, ads1115_ohm: Infinity }))
+      .toBe('2026-11-14 01:15:53.000,2026-11-13T17:15:53.000Z,1,22740,,3,,\n');
   });
   it('pairs each clip reading with the latest air reading no older than 5 minutes', () => {
     const t = (minutes: number) => new Date(Date.UTC(2026, 10, 14, 0, 0) + minutes * 60000).toISOString();
@@ -74,10 +78,10 @@ describe('Clothes MQTT contract', () => {
   it('bounds and validates history queries before hitting the database', async () => {
     const app = new Hono().route('/clothes', clothesRoute);
     for (const query of ['limit=0', 'limit=5001', 'limit=2x', 'start=bad',
-      'start=2026-01-03&end=2026-01-01', 'start=2026-01-01T00:00:00Z&end=2026-01-03T00:00:01Z']) {
+      'start=2026-01-03&end=2026-01-01', 'start=2026-01-01T00:00:00Z&end=2026-01-08T00:00:01Z']) {
       expect((await app.request(`/clothes/history?${query}`)).status).toBe(400);
     }
-    // Two days is the longest range (the record time editor needs it).
-    expect((await app.request('/clothes/history?start=2026-01-01T00:00:00Z&end=2026-01-03T00:00:00Z')).status).toBe(503);
+    // One week is the longest range (the clip detail page's longest view).
+    expect((await app.request('/clothes/history?start=2026-01-01T00:00:00Z&end=2026-01-08T00:00:00Z')).status).toBe(503);
   });
 });

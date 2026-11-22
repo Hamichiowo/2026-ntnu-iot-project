@@ -42,7 +42,7 @@
             <p v-if="clipped" class="ui-note">這筆紀錄超過 48 小時，曲線只顯示開始後的 48 小時；CSV 匯出整段。</p>
             <p v-if="historyError" class="ui-note ui-note--error" role="alert">{{ historyError }}</p>
             <p v-if="history?.bucketSeconds" class="ui-note">範圍較長，曲線以每 {{ history.bucketSeconds }} 秒的平均值顯示；CSV 是原始資料。</p>
-            <p class="muted small">重量（HX711）、電阻（ADS1115）、電容（觸控）都是原始計數，尚未換算；溫濕度來自衣夾配對的空氣盒子。{{ ended ? '' : '晾衣中每分鐘更新。' }}</p>
+            <p class="muted small">重量（HX711）、電容（觸控）是原始計數；電阻設定過分壓電阻後顯示為歐姆；溫濕度來自衣夾配對的空氣盒子。{{ ended ? '' : '晾衣中每分鐘更新。' }}</p>
           </template>
         </section>
 
@@ -50,7 +50,7 @@
           <strong>{{ historyLoading ? '正在讀取感測資料…' : '這段時間沒有感測資料' }}</strong>
         </div>
         <RawCharts v-else-if="history && !detail.demo" :records="history.records" :air-records="history.air" :range="chartRange"
-          :stale-after-ms="history.staleAfterMs" :bucket-seconds="history.bucketSeconds" :air-device-id="history.airDeviceId" />
+          :stale-after-ms="history.staleAfterMs" :bucket-seconds="history.bucketSeconds" :air-device-id="history.airDeviceId" :dividers="clip?.dividers" />
       </div>
 
       <aside class="side-col">

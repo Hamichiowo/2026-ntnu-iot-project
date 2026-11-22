@@ -6,6 +6,7 @@ import {
   startSession, swapGarment, updateClip, updateGarment, updateRecord,
 } from '../clothes/drying';
 import { resetDemoData } from '../clothes/demo';
+import { addDivider, deleteDivider, parseDivider } from '../clothes/resistance';
 import { clothesAirboxId } from '../clothes/store';
 
 export const dryingRoute = new Hono();
@@ -41,6 +42,15 @@ dryingRoute.patch('/clips/:id', (c) => handle(c, '資料庫無法寫入，衣夾
   const clip = await updateClip(c.req.param('id'), patch);
   return c.json({ success: true, clip: { ...clip, resolved_airbox_id: await clothesAirboxId(clip.id) } });
 }));
+
+// Divider resistor settings, used to show the ADS1115 reading as ohms. Each applies from `since` on.
+dryingRoute.post('/clips/:id/dividers', (c) => handle(c, '資料庫無法寫入，分壓電阻設定沒有儲存', async () => {
+  const divider = parseDivider(await jsonBody(c), new Date());
+  return c.json({ success: true, dividers: await addDivider(c.req.param('id'), divider) }, 201);
+}));
+
+dryingRoute.delete('/clips/:id/dividers/:dividerId', (c) => handle(c, '資料庫無法寫入，分壓電阻設定沒有刪除', async () =>
+  c.json({ success: true, dividers: await deleteDivider(c.req.param('id'), c.req.param('dividerId')) })));
 
 // Only demo clips can be removed (with their demo sessions).
 dryingRoute.delete('/clips/:id', (c) => handle(c, '資料庫無法寫入，衣夾沒有移除', async () => {
