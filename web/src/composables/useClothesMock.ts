@@ -10,10 +10,10 @@ import { computed, reactive, ref } from 'vue';
 import { BASE_MINUTES } from '../constants/garments';
 import { DAY_MS, TAIPEI_MS } from '../utils/format';
 import { clothesLiveState, type Field } from './useClothesData';
-import { dryAtOf, dryingApi, dryingState, useDrying, type Garment, type GarmentDraft, type Session } from './useDrying';
+import { dryAtOf, dryingApi, dryingState, useDrying, type Garment, type GarmentDraft, type RecordPatch, type Session } from './useDrying';
 import { loadSettings, saveSettings, useSettings } from './useSettings';
 
-export type { DryRecord, Garment, GarmentDraft, Session } from './useDrying';
+export type { DryRecord, Garment, GarmentDraft, RecordPatch, Session, SessionDetail } from './useDrying';
 export type Method = Field;
 
 const SENSOR_KEYS = ['hx711_raw', 'ads1115_raw', 'touch_raw'] as const;
@@ -145,6 +145,9 @@ async function attempt<T>(work: () => Promise<T>): Promise<T | null> {
 
 const updateGarment = (id: string, patch: Partial<GarmentDraft>) => attempt(() => dryingApi.updateGarment(id, patch));
 const addGarment = (draft: GarmentDraft, demo: boolean) => attempt(() => dryingApi.addGarment(draft, demo));
+const deleteGarment = (id: string) => attempt(() => dryingApi.deleteGarment(id));
+const updateRecord = (id: string, patch: RecordPatch) => attempt(() => dryingApi.updateRecord(id, patch));
+const deleteRecord = (id: string) => attempt(() => dryingApi.deleteRecord(id));
 const swapGarment = (sessionId: string, garmentId: string) => attempt(() => dryingApi.swapGarment(sessionId, garmentId));
 async function startSession(clipId: string, garment: { id: string } | GarmentDraft) {
   const session = await attempt(() => dryingApi.startSession(clipId, garment));
@@ -164,6 +167,6 @@ export function useClothesMock() {
   return {
     state, now, weather, devices, activeClipIds, busyGarmentIds, demoEnabled, actionError, loaded: dryingState.loaded, loadError: dryingState.loadError,
     garmentById, dryCount, predictMinutes, clipStatus, clipById, methodOf, garmentNameTaken,
-    updateGarment, addGarment, swapGarment, startSession, endSession, setMethod, removeDevice, clearFocus, reset, setDemoEnabled,
+    updateGarment, addGarment, deleteGarment, updateRecord, deleteRecord, swapGarment, startSession, endSession, setMethod, removeDevice, clearFocus, reset, setDemoEnabled,
   };
 }

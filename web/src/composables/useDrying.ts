@@ -12,7 +12,7 @@ import { apiFetch } from './useAuth';
 
 export interface Garment {
   id: string; name: string; style: StyleKey; color: string; material: Material;
-  demo: boolean; dryCount: number; busy: boolean;
+  demo: boolean; dryCount: number; sessionCount: number; busy: boolean;
 }
 export type GarmentDraft = Pick<Garment, 'name' | 'style' | 'color' | 'material'>;
 export interface Session { id: string; clipId: string; garmentId: string; startedAt: number; totalMin: number; demo: boolean }
@@ -20,6 +20,13 @@ export interface DryRecord {
   id: string; clipId: string; garmentId: string; startedAt: number; endedAt: number;
   actualMin: number | null; predictedMin: number; outcome: 'dry' | 'early'; demo: boolean;
 }
+// One session from GET /sessions/:id: drying (endedAt null) or ended.
+export interface SessionDetail {
+  id: string; clipId: string; garmentId: string; startedAt: number; endedAt: number | null; predictedMin: number;
+  actualMin: number | null; outcome: 'dry' | 'early' | null; demo: boolean;
+  garment: { id: string; name: string; style: StyleKey; color: string; material: Material };
+}
+export interface RecordPatch { garment_id?: string; started_at?: string; ended_at?: string }
 export interface Clip { id: string; name: string; topic: string | null; demo: boolean; predictMethod: Field; airboxId: string | null }
 
 const MIN = 60000;
@@ -57,7 +64,8 @@ const ms = (value: string | null) => (value ? new Date(value).getTime() : 0);
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const toClip = (c: any): Clip => ({ id: c.id, name: c.name, topic: c.topic, demo: c.is_demo, predictMethod: c.predict_method, airboxId: c.airbox_id });
 const toGarment = (g: any): Garment => ({
-  id: g.id, name: g.name, style: g.style, color: g.color, material: g.material, demo: g.is_demo, dryCount: g.dry_count ?? 0, busy: !!g.busy,
+  id: g.id, name: g.name, style: g.style, color: g.color, material: g.material, demo: g.is_demo, dryCount: g.dry_count ?? 0,
+  sessionCount: g.session_count ?? 0, busy: !!g.busy,
 });
 const toSession = (s: any): Session => ({
   id: s.id, clipId: s.clip_id, garmentId: s.garment_id, startedAt: ms(s.started_at), totalMin: s.predicted_min, demo: s.is_demo,
@@ -65,6 +73,10 @@ const toSession = (s: any): Session => ({
 const toRecord = (s: any): DryRecord => ({
   id: s.id, clipId: s.clip_id, garmentId: s.garment_id, startedAt: ms(s.started_at), endedAt: ms(s.ended_at),
   actualMin: s.actual_min, predictedMin: s.predicted_min, outcome: s.outcome, demo: s.is_demo,
+});
+const toDetail = (s: any): SessionDetail => ({
+  id: s.id, clipId: s.clip_id, garmentId: s.garment_id, startedAt: ms(s.started_at), endedAt: s.ended_at ? ms(s.ended_at) : null,
+  predictedMin: s.predicted_min, actualMin: s.actual_min, outcome: s.outcome, demo: s.is_demo, garment: s.garment,
 });
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -103,6 +115,16 @@ export const dryingApi = {
     return toGarment(data.garment);
   },
   updateGarment: (id: string, patch: Partial<GarmentDraft>) => write(`/garments/${encodeURIComponent(id)}`, 'PATCH', patch),
+  deleteGarment: (id: string) => write(`/garments/${encodeURIComponent(id)}`, 'DELETE'),
+  async getSession(id: string) {
+    const data = await request(`${API}/sessions/${encodeURIComponent(id)}`);
+    return toDetail(data.session);
+  },
+  async updateRecord(id: string, patch: RecordPatch) {
+    const data = await write<{ session: unknown }>(`/sessions/${encodeURIComponent(id)}`, 'PATCH', patch);
+    return toDetail(data.session);
+  },
+  deleteRecord: (id: string) => write(`/sessions/${encodeURIComponent(id)}`, 'DELETE'),
   async startSession(clipId: string, garment: { id: string } | GarmentDraft) {
     const body = 'id' in garment ? { clip_id: clipId, garment_id: garment.id } : { clip_id: clipId, garment };
     const data = await write<{ session: unknown }>('/sessions', 'POST', body);

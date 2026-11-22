@@ -46,11 +46,12 @@ async function signOut() {
   location.assign('/login');
 }
 
-// Clip detail (/clips/:id) and air box detail (/devices/:id) both live under 設備狀況.
+// Clip detail (/clips/:id) and air box detail (/devices/:id) both live under 設備狀況;
+// garments and drying records (/garments…, /sessions…) under 衣物管理.
 const items = [
   { to: '/', label: '總覽', match: (p: string) => p === '/' || p === '/start' },
   { to: '/devices', label: '設備狀況', match: (p: string) => p.startsWith('/devices') || p.startsWith('/clips/') },
-  { to: '/sessions', label: '晾衣紀錄', match: (p: string) => p === '/sessions' },
+  { to: '/garments', label: '衣物管理', match: (p: string) => p.startsWith('/garments') || p.startsWith('/sessions') },
   { to: '/weather', label: '戶外天氣', match: (p: string) => p === '/weather' },
   { to: '/history', label: '空氣歷史', match: (p: string) => p === '/history' },
 ];
