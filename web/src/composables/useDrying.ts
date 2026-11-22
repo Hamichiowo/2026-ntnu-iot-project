@@ -8,6 +8,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { Material, StyleKey } from '../constants/garments';
 import type { Field } from './useClothesData';
 import { useSettings } from './useSettings';
+import { apiFetch } from './useAuth';
 
 export interface Garment {
   id: string; name: string; style: StyleKey; color: string; material: Material;
@@ -38,7 +39,7 @@ async function request(path: string, init: { method?: string; body?: unknown } =
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(path, {
+    const response = await apiFetch(path, {
       cache: 'no-store', signal: controller.signal, method: init.method,
       headers: init.body === undefined ? undefined : { 'Content-Type': 'application/json' },
       body: init.body === undefined ? undefined : JSON.stringify(init.body),

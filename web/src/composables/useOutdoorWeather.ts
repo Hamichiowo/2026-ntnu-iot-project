@@ -1,4 +1,5 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { apiFetch } from './useAuth';
 
 export interface OutdoorWeather {
   county: string;
@@ -40,7 +41,7 @@ async function request(path: string) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    const response = await fetch(path, { cache: 'no-store', signal: controller.signal });
+    const response = await apiFetch(path, { cache: 'no-store', signal: controller.signal });
     const data = await response.json().catch(() => null);
     if (!response.ok || !data?.success) throw new Error(data?.error || `HTTP ${response.status}`);
     return data;
