@@ -65,6 +65,12 @@ export class MQTTPublisher {
     });
   }
 
+  // Plain publish (QoS 1); an empty retained payload clears a retained message.
+  publishRaw(topic: string, payload: string, retain = false): Promise<boolean> {
+    if (!this.client || !this.connected) return Promise.resolve(false);
+    return new Promise((resolve) => this.client!.publish(topic, payload, { qos: 1, retain }, (err) => resolve(!err)));
+  }
+
   isConnected(): boolean {
     return this.connected;
   }

@@ -21,6 +21,7 @@ import {
 import { apiRouter } from './routes/api';
 import { ensureClothesSchema } from './clothes/store';
 import { ensureDryingSchema } from './clothes/drying';
+import { ensureFirmwareSchema } from './clothes/firmware';
 import { ensureSettingsSchema } from './settings/store';
 
 const app = new Hono();
@@ -77,6 +78,7 @@ async function bootstrap() {
   await ensureClothesSchema();
   // Clips, garments and drying sessions; clips.airbox_id refers to the MAPS devices table.
   await ensureDryingSchema();
+  await ensureFirmwareSchema();
   await ensureSettingsSchema();
 
   // 2. Initialize WebSocket Realtime Telemetry Broadcaster

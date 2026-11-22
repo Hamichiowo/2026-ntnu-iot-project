@@ -23,6 +23,8 @@ apiRouter.use('*', async (context, next) => {
   if (path.endsWith('/auth/login') || path.endsWith('/auth/me')) return next();
   const deviceCredentialPath = /\/devices\/[^/]+\/(backfill(?:\/csv)?|date-summary)$/.test(path);
   if (deviceCredentialPath && context.req.header('Authorization')?.startsWith('Basic ')) return next();
+  // A clip downloading its firmware has no session; the route checks the token from its OTA command.
+  if (context.req.method === 'GET' && /\/clothes\/firmware\/[0-9a-f-]{36}\/image$/.test(path)) return next();
   return sessionMiddleware(context, next);
 });
 

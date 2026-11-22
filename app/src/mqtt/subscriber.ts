@@ -8,6 +8,10 @@ import type { OnlinePayload, SensorPayload, StatusPayload } from '../types';
 import { insertSensorData, setDeviceOnline, upsertDeviceStatus } from '../db/queries';
 import { ingestClothesRaw } from '../clothes/ingest';
 import { CLOTHES_TOPIC as clothesTopic } from '../clothes/store';
+import { ingestFirmwareReport } from '../clothes/firmware';
+
+// The clip reports the firmware it runs, and update progress, next to its data topic.
+const firmwareTopic = `${clothesTopic}/fw`;
 
 export class MQTTSubscriber {
   private client: MqttClient | null = null;
@@ -32,7 +36,7 @@ export class MQTTSubscriber {
         this.connected = true;
         console.log(`[MQTTSubscriber] Connected to broker: ${this.brokerUrl}`);
 
-        const topics = ['MAPS/+/sensor', 'MAPS/+/status', 'MAPS/+/online', clothesTopic];
+        const topics = ['MAPS/+/sensor', 'MAPS/+/status', 'MAPS/+/online', clothesTopic, firmwareTopic];
         this.client!.subscribe(topics, { qos: 1 }, (err) => {
           if (err) {
             console.error('[MQTTSubscriber] Subscription failed:', err);
@@ -47,6 +51,11 @@ export class MQTTSubscriber {
           const receivedAt = new Date();
           ingestClothesRaw(payload.toString(), receivedAt, packet.retain)
             .catch((error) => console.error('[Clothes] Record not stored:', error.message));
+          return;
+        }
+        if (topic === firmwareTopic) {
+          ingestFirmwareReport(clothesTopic, payload.toString(), new Date())
+            .catch((error) => console.error('[Firmware] Report not stored:', error.message));
           return;
         }
         this.handleMessage(topic, payload.toString());
