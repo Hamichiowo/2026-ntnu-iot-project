@@ -9,6 +9,7 @@
     </section>
 
     <p v-if="mock.actionError.value" class="ui-note ui-note--error" role="alert">{{ mock.actionError.value }}</p>
+    <p v-if="firmware.actionError.value || firmware.loadError.value" class="ui-note ui-note--error" role="alert">{{ firmware.actionError.value || firmware.loadError.value }}</p>
     <section aria-label="衣夾" class="section">
       <div class="row-head">
         <h2 class="section-title">衣夾</h2>
@@ -34,11 +35,11 @@
         </div>
         <div v-if="c.job" class="fw-line" role="status">
           <div class="fw-text">
-            <b :class="c.job.phase === 'offline' ? 'muted-2' : 'ac-tx'">韌體 {{ c.job.to }}：{{ FIRMWARE_PHASE[c.job.phase] }}</b>
-            <button v-if="c.job.phase === 'wait' || c.job.phase === 'offline'" type="button" class="fw-cancel" @click="firmware.cancel(c.device.id)">取消</button>
-            <span v-else class="mono muted">{{ c.job.pct }}%</span>
+            <b :class="c.job.phase === 'failed' ? 'wa-tx' : c.job.phase === 'offline' ? 'muted-2' : 'ac-tx'">韌體 {{ c.job.to }}：{{ FIRMWARE_PHASE[c.job.phase] }}{{ c.job.detail ? `（${c.job.detail}）` : '' }}</b>
+            <button v-if="c.job.cancellable" type="button" class="fw-cancel" @click="firmware.cancel(c.device.id)">取消</button>
+            <span v-else-if="c.job.phase !== 'failed'" class="mono muted">{{ c.job.pct }}%</span>
           </div>
-          <span v-if="c.job.phase !== 'offline'" class="ui-bar"><span :style="{ width: `${c.job.pct}%` }"></span></span>
+          <span v-if="c.job.phase !== 'offline' && c.job.phase !== 'failed'" class="ui-bar"><span :style="{ width: `${c.job.pct}%` }"></span></span>
         </div>
         <p v-if="c.device.issue && c.status.online" class="issue">{{ c.device.issue }}</p>
         <p v-else-if="c.status.tone === 'warn'" class="issue">有感測器本筆讀取失敗，請檢查排線</p>
@@ -95,7 +96,7 @@
       </div>
     </section>
 
-    <!-- The connection log is demo only (no real event source yet), plus this page's firmware updates. -->
+    <!-- The connection log is demo only (no real event source yet), plus firmware updates. -->
     <section v-if="events.length" class="panel">
       <h2>連線事件</h2>
       <div class="ui-table-wrap">
@@ -139,8 +140,9 @@ function removeClip(device: { id: string; name: string }) {
 
 const clips = computed(() => mock.devices.value.map((device) => {
   const session = mock.state.sessions.find((s) => s.clipId === device.id);
-  return { device, status: mock.clipStatus(device), session: session ? mock.garmentById(session.garmentId)?.name ?? '' : '',
-    version: firmware.installed[device.id] ?? device.fw ?? '未回報', job: firmware.jobOf(device.id) };
+  const status = mock.clipStatus(device);
+  return { device, status, session: session ? mock.garmentById(session.garmentId)?.name ?? '' : '',
+    version: firmware.versionOf(device.id) ?? device.fw ?? '未回報', job: firmware.jobOf(device.id, status.online) };
 }));
 const rawLine = computed(() => latest.value
   ? [latest.value.hx711_raw, latest.value.ads1115_raw, latest.value.touch_raw].map((v) => formatRaw(v)).join(' / ') : '—');
@@ -190,8 +192,9 @@ async function loadAir() {
     airError.value = '無法讀取空氣盒子清單，請檢查後端。';
   } finally { airLoading.value = false; }
 }
-onMounted(() => { void loadAir(); airTimer = setInterval(loadAir, 30000); });
-onUnmounted(() => clearInterval(airTimer));
+let stopFirmware: (() => void) | undefined;
+onMounted(() => { void loadAir(); airTimer = setInterval(loadAir, 30000); stopFirmware = firmware.watch(); });
+onUnmounted(() => { clearInterval(airTimer); stopFirmware?.(); });
 
 const onlineCount = computed(() => clips.value.filter((c) => c.status.online).length + airDevices.value.filter((d) => d.online).length);
 const totalCount = computed(() => clips.value.length + airDevices.value.length);
@@ -199,7 +202,7 @@ const totalCount = computed(() => clips.value.length + airDevices.value.length);
 const rate = computed(() => clips.value.filter((c) => c.status.online).length + airDevices.value.filter((d) => d.online).length);
 const attention = computed(() => clips.value.filter((c) => c.status.tone !== 'on').length + airDevices.value.filter((d) => !d.online).length);
 
-// Firmware updates done on this page, then the demo connection log (relative to now).
+// Firmware updates, then the demo connection log (relative to now).
 const events = computed(() => {
   const t = mock.now.value;
   const updates = firmware.events.value.map((e) => ({ ago: (t - e.at) / MIN, device: e.device, text: e.text, tone: e.tone }));

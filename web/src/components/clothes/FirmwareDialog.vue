@@ -39,7 +39,7 @@
           <li v-for="c in clips" :key="c.device.id">
             <label class="clip" :class="{ on: isChosen(c.device.id), locked: scope === 'all' || c.updating }">
               <input type="checkbox" :checked="isChosen(c.device.id)" :disabled="scope === 'all' || c.updating" @change="togglePick(c.device.id)" />
-              <span class="clip-name">{{ c.device.name }}</span>
+              <span class="clip-name">{{ c.device.name }} <DemoTag v-if="!c.device.live" /></span>
               <span class="status" :class="`status--${c.status.tone}`"><i></i>{{ c.status.label }}</span>
               <span class="muted mono">{{ c.updating ? '更新中' : c.version }}</span>
             </label>
@@ -48,12 +48,13 @@
       </section>
 
       <p class="ui-note ui-note--info">衣夾平常在睡眠，下次醒來回報時（約 1 分鐘內）才會開始下載；離線的衣夾會排著，上線後自動更新。更新時衣夾會重新開機，約 1 分鐘沒有資料。</p>
-      <p class="demo-note">介面預覽：檔案只在瀏覽器裡檢查，進度是模擬的，不會真的傳到衣夾。</p>
+      <p v-if="chosen.some((c) => !c.device.live)" class="demo-note">標了「示範」的衣夾沒有實體裝置，它們的更新進度是模擬的。</p>
+      <p v-if="sendError" class="ui-note ui-note--error" role="alert">{{ sendError }}</p>
 
       <div class="fw-foot">
         <span class="muted">{{ summary }}</span>
         <button type="button" class="ui-btn" @click="dialog?.close()">取消</button>
-        <button type="submit" class="ui-btn ui-btn--primary" :disabled="!info || !chosen.length">開始更新</button>
+        <button type="submit" class="ui-btn ui-btn--primary" :disabled="!info || !chosen.length || sending">{{ sending ? '上傳中…' : '開始更新' }}</button>
       </div>
     </form>
   </dialog>
@@ -62,6 +63,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useClothesMock } from '../../composables/useClothesMock';
+import DemoTag from './DemoTag.vue';
 import { useFirmware } from '../../composables/useFirmware';
 
 const mock = useClothesMock();
@@ -70,12 +72,12 @@ const dialog = ref<HTMLDialogElement>();
 
 const clips = computed(() => mock.devices.value.map((device) => ({
   device, status: mock.clipStatus(device),
-  version: firmware.installed[device.id] ?? device.fw ?? '未回報',
-  updating: Boolean(firmware.jobOf(device.id)),
+  version: firmware.versionOf(device.id) ?? device.fw ?? '未回報',
+  updating: ['offline', 'wait', 'down', 'boot'].includes(firmware.jobOf(device.id)?.phase ?? ''),
 })));
 
 // ----- the file, checked in the browser against the ESP-IDF image header
-const MAX_BYTES = 1536 * 1024;  // room in one OTA slot
+const MAX_BYTES = firmware.maxBytes.value;  // one OTA slot
 interface ImageInfo { version: string; built: string; chip: string }
 const file = ref<File | null>(null);
 const info = ref<ImageInfo | null>(null);
@@ -125,12 +127,20 @@ const summary = computed(() => {
   return `${info.value.version} → ${chosen.value.length} 支衣夾${offline ? `（${offline} 支離線，先排著）` : ''}`;
 });
 
-function submit() {
-  if (!info.value || !chosen.value.length) return;
-  firmware.start(info.value.version, chosen.value.map((c) => ({ id: c.device.id, name: c.device.name, online: c.status.online })));
-  dialog.value?.close();
+const sending = ref(false);
+const sendError = ref('');
+async function submit() {
+  if (!file.value || !info.value || !chosen.value.length || sending.value) return;
+  sending.value = true; sendError.value = '';
+  try {
+    await firmware.start(file.value, info.value.version,
+      chosen.value.map((c) => ({ id: c.device.id, name: c.device.name, online: c.status.online, live: c.device.live })));
+    dialog.value?.close();
+  } catch (error) {
+    sendError.value = `沒有開始更新：${(error as Error).message}`;
+  } finally { sending.value = false; }
 }
-function onClose() { file.value = null; info.value = null; fileError.value = ''; }
+function onClose() { file.value = null; info.value = null; fileError.value = ''; sendError.value = ''; }
 // A click on the backdrop lands on the <dialog> element itself.
 function onBackdrop(event: MouseEvent) { if (event.target === dialog.value) dialog.value?.close(); }
 

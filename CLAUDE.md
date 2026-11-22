@@ -16,7 +16,7 @@ ESP32 智慧衣夾 → MQTT → 後端加上收到時間 → PostgreSQL → 網�
 | `app/tests/` | `bun test`，不需要資料庫（沒資料庫時應該回 503） |
 | `db/init.sql`、`db/migrations/` | MAPS 的資料表；衣夾的表（`clothes_raw`、`clips`、`garments`、`drying_sessions`、`app_settings`）由 `ensure*Schema()` 在啟動時自動建立 |
 | `web/` | 前端：Vue 3 + Vite + Chart.js，用 nginx 提供，`/api` 和 `/ws` 轉到 app |
-| `firmware/esp32-s3/` | ESP-IDF 6.1 韌體：只會定時發佈原始值（兩次之間深度睡眠），**沒有訂閱任何 topic，也沒有歸零或校正功能** |
+| `firmware/esp32-s3/` | ESP-IDF 6.1 韌體：定時發佈原始值（兩次之間深度睡眠），可遠端更新（OTA）。**只訂閱 `<topic>/ota`，沒有歸零或校正功能** |
 | `mosquitto/` | MQTT broker 設定；`conf.d/`、`certs/` 給選用的 8883 TLS（`scripts/setup.sh tls`） |
 | `scripts/setup.sh`、`setup.ps1` | 建立 `.env`、產生密碼、印出裝置設定、TLS、`check` 檢查被拒絕的裝置。說明在 `docs/MQTT.md` |
 | `tools/` | 整合測試（`smoke_*.py`，設定只讀 `tools/config.json`）與 MQTT/設定頁驗證工具，見 `tools/README.md` |
@@ -27,6 +27,10 @@ ESP32 智慧衣夾 → MQTT → 後端加上收到時間 → PostgreSQL → 網�
 - 內容 `{"hx711_raw":int|null,"ads1115_raw":int|null,"touch_raw":int|null}`，只接受這三個欄位；讀取失敗傳 `null`
 - ESP32 不傳時間，**時間由後端收到訊息時加上**（UTC）
 - retained 訊息要拒絕，避免舊資料被當成新的
+- 韌體更新另外用兩個 topic，不影響上面三個欄位的約定：
+  - `<topic>/ota`：後端留給衣夾的 retained 指令 `{"sha","size","port","path"}`；衣夾醒來回報後才會讀到。取消或完成時後端用空的 retained 訊息清掉。
+  - `<topic>/fw`：衣夾回報 `{"version","sha","state":"running"|"downloading"|"failed","progress","target","detail"}`；`running` 是 retained。
+  - 判斷「衣夾跑的是不是這個韌體」用映像檔裡的 ELF SHA-256（`sha`），不是版本字串。
 
 ### 衣夾 API（`/api/v1/clothes`）
 - 原始資料：`GET /latest`、`GET /history?start&end&limit`（最多 24 小時，長範圍取平均 `bucket_seconds`）、`GET /export?start&end`（CSV，最多 7 天）、`GET /airboxes`。都可以帶 `?clip=`（預設 `c1`）或 `?airbox=`。
@@ -42,6 +46,11 @@ ESP32 智慧衣夾 → MQTT → 後端加上收到時間 → PostgreSQL → 網�
   - 列表 API 預設**不回傳**示範資料，要帶 `?demo=include`；每一筆都有 `is_demo`。
   - 複合 FK `(clip_id, is_demo)`、`(garment_id, is_demo)` 保證一筆晾衣和它的衣夾、衣物同為真或同為示範；混用時 API 回 400。
   - 示範資料不會在啟動時寫入，要執行 `make seed`（已經有就略過）；`POST /demo/reset` 只重建示範資料。衣夾-01 不會有示範資料。示範資料（`demo.ts`）用名稱互相參照，id 由資料庫產生。
+- 韌體更新（`firmware.ts`，表 `firmware_images`、`firmware_jobs`、`clip_firmware` 由 `ensureFirmwareSchema()` 建立）：
+  - `GET /firmware`（映像檔清單、最近的更新、各衣夾回報的版本）、`POST /firmware`（multipart `file`，只收 ESP32-S3 app image，最大 3 MB）、`POST /firmware/:id/rollout`（`clip_ids`: `"all"` 或 id 陣列，只會排給實體衣夾）、`POST /firmware/jobs/:id/cancel`（只有還在排隊的能取消）。
+  - `GET /firmware/:id/image?token=` 是給衣夾下載用的，不需要登入，靠指令裡的 token；`api.ts` 的 session middleware 對這個路徑放行。
+  - 衣夾用 `http://<MQTT host>:<FIRMWARE_HTTP_PORT>` 下載（預設 `WEB_PORT`，也就是 web 容器的 nginx）。nginx 對上傳路徑放寬到 4 MB。
+  - 示範衣夾沒有實體裝置，它們的更新進度由前端模擬（`useFirmware.ts`）。
 - 錯誤：呼叫端的錯誤用 `HttpError` 回 400／404／409，資料庫問題回 503。
 
 ### 全站設定（`/api/v1/settings`）
