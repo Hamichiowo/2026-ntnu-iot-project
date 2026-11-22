@@ -7,11 +7,11 @@ import { globalEventBus } from '../events/bus';
 import type { OnlinePayload, SensorPayload, StatusPayload } from '../types';
 import { insertSensorData, setDeviceOnline, upsertDeviceStatus } from '../db/queries';
 import { ingestClothesRaw } from '../clothes/ingest';
-import { CLOTHES_TOPIC as clothesTopic } from '../clothes/store';
+import { CLIP_TOPICS, LEGACY_TOPIC, parseClipTopic } from '../clothes/store';
 import { ingestFirmwareReport } from '../clothes/firmware';
 
-// The clip reports the firmware it runs, and update progress, next to its data topic.
-const firmwareTopic = `${clothesTopic}/fw`;
+// Shared topics of clips on firmware before 0.5.0; subscribed only when CLOTHES_MQTT_TOPIC is set.
+const legacyTopics = LEGACY_TOPIC ? [LEGACY_TOPIC, `${LEGACY_TOPIC}/fw`] : [];
 
 export class MQTTSubscriber {
   private client: MqttClient | null = null;
@@ -36,7 +36,7 @@ export class MQTTSubscriber {
         this.connected = true;
         console.log(`[MQTTSubscriber] Connected to broker: ${this.brokerUrl}`);
 
-        const topics = ['MAPS/+/sensor', 'MAPS/+/status', 'MAPS/+/online', clothesTopic, firmwareTopic];
+        const topics = ['MAPS/+/sensor', 'MAPS/+/status', 'MAPS/+/online', ...CLIP_TOPICS, ...legacyTopics];
         this.client!.subscribe(topics, { qos: 1 }, (err) => {
           if (err) {
             console.error('[MQTTSubscriber] Subscription failed:', err);
@@ -47,17 +47,21 @@ export class MQTTSubscriber {
       });
 
       this.client.on('message', (topic, payload, packet) => {
-        if (topic === clothesTopic) {
+        // A clip's own topic carries its device id; the shared topic of older firmware does not.
+        const clip = parseClipTopic(topic);
+        const kind = clip?.kind ?? (topic === legacyTopics[0] ? 'raw' : topic === legacyTopics[1] ? 'fw' : null);
+        if (kind === 'raw') {
           const receivedAt = new Date();
-          ingestClothesRaw(payload.toString(), receivedAt, packet.retain)
+          ingestClothesRaw(payload.toString(), receivedAt, packet.retain, clip?.deviceId ?? null)
             .catch((error) => console.error('[Clothes] Record not stored:', error.message));
           return;
         }
-        if (topic === firmwareTopic) {
-          ingestFirmwareReport(clothesTopic, payload.toString(), new Date())
+        if (kind === 'fw') {
+          ingestFirmwareReport(clip?.deviceId ?? null, payload.toString(), new Date())
             .catch((error) => console.error('[Firmware] Report not stored:', error.message));
           return;
         }
+        if (topic.startsWith('clothes/')) return;  // not a valid clip topic
         this.handleMessage(topic, payload.toString());
       });
 

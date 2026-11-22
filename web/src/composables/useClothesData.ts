@@ -34,14 +34,18 @@ const loaded = ref(false);
 const air = ref<AirLatest | null>(null);  // null: no air box has ever reported
 
 // Per-clip settings live on the server (/api/v1/clothes/clips), so every browser pairs the clip
-// with the same air box. There is one physical clip for now: the real clip with an MQTT topic.
-// Its id is a UUID from the server; until it is known, requests leave ?clip= out and the server
-// uses that clip anyway.
+// with the same air box. The live state below follows one real clip at a time: the one a page
+// picked with selectClip() (the clip detail page), otherwise the first real clip. Until the list
+// has loaded, requests leave ?clip= out and the server uses its first real clip.
 export type ClipSettings = {
   id: string; name: string; topic: string | null; is_demo: boolean; airbox_id: string | null; resolved_airbox_id: string | null;
   predict_method: Field;
 };
 const clipSettings = ref<ClipSettings | null>(null);
+const selectedClipId = ref<string | null>(null);
+let realClips: ClipSettings[] = [];
+const followedClip = () => realClips.find((clip) => clip.id === selectedClipId.value)
+  ?? realClips.find((clip) => clip.topic) ?? realClips[0] ?? null;
 const clipSettingError = ref('');
 
 // The air box the clip uses: its own setting, else the server default (CLOTHES_AIRBOX_ID or the
@@ -58,7 +62,8 @@ export const airboxLabel = (box: Airbox) =>
   `${box.display_name ? `${box.display_name}（${box.device_id}）` : box.device_id}${box.connected ? '' : '（離線）'}`;
 // The server picks the clip's air box from ?clip= (the real clip when left out).
 export const withClip = (params: URLSearchParams) => {
-  if (clipSettings.value) params.set('clip', clipSettings.value.id);
+  const id = selectedClipId.value ?? clipSettings.value?.id;
+  if (id) params.set('clip', id);
   return params;
 };
 let airboxVersion = 0;  // bumps when the pairing changes, so late answers for the old box are dropped
@@ -90,7 +95,8 @@ async function loadAirboxes() {
     ]);
     if (!liveUsers || version !== airboxVersion) return;
     airboxes.value = boxes.airboxes; defaultAirboxId.value = boxes.default_id; airboxesLoaded = Date.now();
-    clipSettings.value = clips.clips.find((clip: ClipSettings) => !clip.is_demo && clip.topic) ?? null;
+    realClips = clips.clips.filter((clip: ClipSettings) => !clip.is_demo);
+    clipSettings.value = followedClip();
   } catch { /* the picker keeps its last list */ }
 }
 
@@ -229,6 +235,19 @@ function stopIfIdle() {
   if (liveUsers) return;
   clearTimeout(timer); running = false;
   controllers.forEach((controller) => controller.abort());
+}
+
+// Follow another real clip (null = back to the first one). What is on screen for the previous clip
+// is cleared, and answers still on their way for it are dropped.
+export function selectClip(id: string | null) {
+  if (selectedClipId.value === id) return;
+  const before = selectedClipId.value ?? clipSettings.value?.id ?? null;
+  selectedClipId.value = id;
+  clipSettings.value = followedClip();
+  if ((id ?? clipSettings.value?.id ?? null) === before) return;
+  airboxVersion++; airboxesLoaded = 0; historyUpdated = 0;
+  latest.value = null; stale.value = true; loaded.value = false; air.value = null;
+  records.value = []; airRecords.value = []; historyLoading.value = true;
 }
 
 // ---------------------------------------------------------------- public API

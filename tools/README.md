@@ -4,7 +4,7 @@
 
 | 腳本 | 用途 |
 |---|---|
-| `smoke_clothes.py` | `clothes/raw`：正常值、格式錯誤會被拒絕、null 值、history 與 limit、app 重啟後資料仍在（`local_stack` 時）、超過 10 秒沒資料會顯示 stale |
+| `smoke_clothes.py` | 衣夾 topic（`clothes/<id>/raw`）：正常值、格式錯誤會被拒絕、null 值、history 與 limit、app 重啟後資料仍在（`local_stack` 時）、超過 10 秒沒資料會顯示 stale |
 | `smoke_maps.py` | 模擬一台 MAPS 盒子依序送 `MAPS/<id>/online`、`status`、`sensor`，並檢查 `/api/v1/devices/<id>` 與 `/sensor/latest`、格式錯誤的 payload、`online=false` 時是否轉為離線 |
 | `smoke_common.py` | 共用設定讀取，以及只用 Python 標準庫寫的 MQTT 發送（支援 TLS） |
 | `mqtt_tls_monitor.py` | 只讀的遠端 TLS broker 監看：從韌體的 `app_config.h` 讀取帳密，訂閱 clothes topic 並顯示收到的資料，不發送測試資料（不使用 `config.json`） |
@@ -33,7 +33,7 @@ python tools/smoke_maps.py
   "local_stack": false,
   "mqtt": { "host": "iot.example.org", "port": 8883, "tls": true, "ca_file": "",
             "username": "clothes", "password": "..." },
-  "topics": { "clothes": "clothes/raw", "maps_prefix": "MAPS" },
+  "topics": { "clothes": "clothes/AABBCC000001/raw", "maps_prefix": "MAPS" },
   "maps_test_device": "SMOKE-TEST-01"
 }
 ```
@@ -45,5 +45,5 @@ python tools/smoke_maps.py
 | `mqtt.host` / `port` | broker 位址；TLS 時 host 要填憑證上的名稱 |
 | `mqtt.tls` / `ca_file` | 啟用 TLS；自簽憑證時 `ca_file` 填 `mosquitto/certs/ca.crt`，公開 CA 則留空 |
 | `mqtt.username` / `password` | MQTT 帳密 |
-| `topics.clothes` / `maps_prefix` | topic 設定（預設 `clothes/raw`、`MAPS`） |
+| `topics.clothes` / `maps_prefix` | topic 設定（預設 `clothes/AABBCC000001/raw`、`MAPS`；衣夾 topic 中間是 12 碼大寫十六進位的裝置 id） |
 | `maps_test_device` | 模擬盒子的 device ID，請不要和真實盒子重複 |

@@ -28,7 +28,7 @@
    <label class="field" for="username">MQTT 帳號</label><input id="username" maxlength="64" autocomplete="off">
    <label class="field" for="mqttPassword">MQTT 密碼</label><input id="mqttPassword" type="password" maxlength="128" autocomplete="new-password" placeholder="需要更換時才輸入">
    <label class="check"><input type="checkbox" id="keepMqtt" checked>沿用已儲存的 MQTT 密碼</label>
-   <label class="field" for="topic">發送 Topic</label><input id="topic" required maxlength="128" value="clothes/raw" autocomplete="off">
+   <p class="hint">這支衣夾的編號是 <b id="deviceId">—</b>，資料會自動送到 clothes/<span id="deviceTopic">編號</span>/raw，不用設定 Topic。</p>
   </details></section>
   <section class="card"><h2><span class="number">2</span>測試並儲存</h2>
    <p class="hint" style="margin-bottom:16px">Wi-Fi、校時與 MQTT 都成功後才保存。測試期間暫停上傳；失敗會保留舊設定。</p>
@@ -49,7 +49,7 @@ async function api(path,body,timeout=6000){
   const options={signal:controller.signal,cache:'no-store'};
   if(body!==undefined){options.method='POST';options.headers={'Content-Type':'application/json','X-Setup-Token':token};options.body=JSON.stringify(body);}
   const response=await fetch(path,options);
-  if(!response.ok)throw new Error(response.status===400?'設定格式不正確，請確認 Wi-Fi 密碼、port 與 topic。':response.status===409?'板子正在連線，請稍後再試。':'設定請求失敗，請重新連上設定熱點並整理頁面。');
+  if(!response.ok)throw new Error(response.status===400?'設定格式不正確，請確認 Wi-Fi 密碼與 port。':response.status===409?'板子正在連線，請稍後再試。':'設定請求失敗，請重新連上設定熱點並整理頁面。');
   return await response.json();
  }finally{clearTimeout(limit);}
 }
@@ -62,7 +62,7 @@ function passwordState(){
 }
 function busyState(value){
  busy=value;
- for(const id of ['ssid','networks','scan','open','host','port','tls','username','topic','keepMqtt'])$(id).disabled=value;
+ for(const id of ['ssid','networks','scan','open','host','port','tls','username','keepMqtt'])$(id).disabled=value;
  $('save').disabled=value||!config;$('cancel').hidden=!value;$('close').disabled=value;
  $('save').textContent=value?'正在測試連線…':'儲存並連線';passwordState();
 }
@@ -113,7 +113,7 @@ $('settings').addEventListener('submit',async event=>{
  }
  const body={ssid:$('ssid').value,wifi_password:wifiPassword,open:$('open').checked,keep_wifi_password:$('keepWifi').checked,
   host:$('host').value.trim(),port:Number($('port').value),tls:$('tls').checked,username:$('username').value,
-  topic:$('topic').value,mqtt_password:$('mqttPassword').value,keep_mqtt_password:$('keepMqtt').checked};
+  mqtt_password:$('mqttPassword').value,keep_mqtt_password:$('keepMqtt').checked};
  busyState(true);status('已送出設定，正在測試連線…','busy');
  try{await api('/api/connect',body);$('wifiPassword').value='';$('mqttPassword').value='';}
  catch(error){busyState(false);status(error.name==='AbortError'?'送出逾時，請等待狀態更新，避免重複送出。':error.message,'bad');}
@@ -123,7 +123,8 @@ $('close').addEventListener('click',async()=>{try{await api('/api/close',{});com
 (async()=>{
  try{
   config=await api('/api/config');token=config.token;
-  for(const key of ['ssid','host','port','username','topic'])$(key).value=config[key];
+  for(const key of ['ssid','host','port','username'])$(key).value=config[key];
+  $('deviceId').textContent=config.device_id;$('deviceTopic').textContent=config.device_id;
   $('tls').checked=config.tls;$('keepWifi').checked=config.wifi_password_saved;
   $('open').checked=!!config.ssid&&!config.wifi_password_saved;
   $('keepMqtt').checked=config.mqtt_password_saved;busyState(false);

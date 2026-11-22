@@ -79,7 +79,7 @@ docker compose up -d --build
 #define APP_MQTT_TLS        0
 #define APP_MQTT_USERNAME   "clothes"       // = .env MQTT_USERNAME
 #define APP_MQTT_PASSWORD   "..."           // = .env MQTT_PASSWORD
-#define APP_MQTT_TOPIC      "clothes/raw"   // = .env CLOTHES_MQTT_TOPIC
+// 不用設定 topic：衣夾自己用 clothes/<它的編號>/raw
 ```
 
 ESP32 要用 TLS（8883），broker 必須使用**有網域、由公開 CA 簽發的憑證**（例如 Let's Encrypt）。韌體用 ESP-IDF 內建的公開 CA 清單驗證憑證，也會比對主機名稱。
@@ -117,15 +117,17 @@ upload:
 
 | Topic | 方向 | QoS | Retain | 內容 |
 |---|---|---|---|---|
-| `clothes/raw`（`CLOTHES_MQTT_TOPIC`） | ESP32 → server | 0 | 否 | 衣夾原始讀值，每秒一筆 |
+| `clothes/<id>/raw` | ESP32 → server | 1 | 否 | 衣夾原始讀值，約每分鐘一筆 |
+| `clothes/<id>/ota` | server → ESP32 | 1 | 是 | 韌體更新指令，衣夾醒來才讀 |
+| `clothes/<id>/fw` | ESP32 → server | 1 | `running` 是 | 衣夾跑的韌體與更新進度 |
 | `MAPS/<id>/sensor` | 盒子 → server | 1 | 否 | 感測資料，預設每 60 秒一筆 |
 | `MAPS/<id>/status` | 盒子 → server | 1 | 是 | 運行狀態，預設每 300 秒一筆 |
 | `MAPS/<id>/online` | 盒子 → server | 1 | 是 | 連上時送 `true`；斷線時由 LWT（遺囑訊息）或正常關閉送 `false` |
 | `MAPS/<id>/command` | server → 盒子 | 1 | 只有 `set_config` 會 retain | 遠端指令 |
 
-`<id>` 是盒子的 device ID，也是盒子的 MQTT client ID。app 訂閱 `MAPS/+/sensor`、`MAPS/+/status`、`MAPS/+/online` 和 `clothes/raw`。
+`<id>` 是盒子的 device ID，也是盒子的 MQTT client ID。app 訂閱 `MAPS/+/sensor`、`MAPS/+/status`、`MAPS/+/online` 、`clothes/+/raw` 和 `clothes/+/fw`。衣夾的 `<id>` 是 ESP32 的 Wi-Fi MAC（12 碼大寫十六進位），伺服器不用先知道，收到第一筆就自動註冊。
 
-`clothes/raw` 的格式見 [README 的 MQTT 約定](../README.md#mqtt-約定)。MAPS 的 payload 範例：
+`clothes/<id>/raw` 的格式見 [README 的 MQTT 約定](../README.md#mqtt-約定)。MAPS 的 payload 範例：
 
 ```jsonc
 // MAPS/<id>/sensor

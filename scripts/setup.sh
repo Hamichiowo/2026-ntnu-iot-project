@@ -32,6 +32,10 @@ Usage:
   scripts/setup.sh tls --cert FULLCHAIN.pem --key PRIVKEY.pem [--ca CA.pem] [--host HOST] [...]
   scripts/setup.sh tls --disable
       Enable / disable the TLS listener on 8883.
+  scripts/setup.sh admin [--user NAME] [--http]
+      Set the dashboard login. Asks for the password and stores only its hash in .env.
+      --http: the dashboard is opened over plain http:// (no TLS in front), so the
+      login cookie must not be marked Secure.
   scripts/setup.sh check [--watch SECONDS]
       Verify the broker accepts the .env credentials, show auth failures
       from the broker log, and optionally print live MAPS/# and clothes/# traffic.
@@ -203,7 +207,7 @@ tls_has_ca() { tls_enabled && grep -q '^cafile' "$TLS_CONF"; }
 
 cmd_show() {
   [ -f "$ENV_FILE" ] || die ".env not found. Run scripts/setup.sh first."
-  local user pass port tls_port web_port ip plain_bind tls_host topic
+  local user pass port tls_port web_port ip plain_bind tls_host
   user="$(env_get MQTT_USERNAME)"; user="${user:-$(default_user)}"
   pass="$(env_get MQTT_PASSWORD)"
   port="$(env_get MQTT_PORT)"; port="${port:-1883}"
@@ -212,7 +216,6 @@ cmd_show() {
   [ -n "$web_port" ] || { [ "$HAS_ESP32" = 1 ] && web_port=8088 || web_port=8080; }
   plain_bind="$(env_get MQTT_PLAIN_BIND)"; plain_bind="${plain_bind:-0.0.0.0}"
   tls_host="$(env_get MQTT_TLS_HOST)"
-  topic="$(env_get CLOTHES_MQTT_TOPIC)"; topic="${topic:-clothes/raw}"
   ip="$(lan_ip)"
 
   echo
@@ -263,7 +266,6 @@ EOF
 #define APP_MQTT_TLS        1
 #define APP_MQTT_USERNAME   "${user}"
 #define APP_MQTT_PASSWORD   "${pass}"
-#define APP_MQTT_TOPIC      "${topic}"
 EOF
     else
       info "ESP32: firmware/esp32-s3/main/app_config.h  (plain MQTT on the LAN)"
@@ -273,7 +275,6 @@ EOF
       cat <<EOF
 #define APP_MQTT_USERNAME   "${user}"
 #define APP_MQTT_PASSWORD   "${pass}"
-#define APP_MQTT_TOPIC      "${topic}"
 EOF
       if tls_has_ca; then
         warn "The ESP32 only trusts public CAs, so it cannot use this self-signed certificate; keep it on plain MQTT in the LAN."
@@ -463,6 +464,33 @@ cmd_check() {
   [ "$ok" = 1 ]
 }
 
+# ---------------------------------------------------------------------- admin
+cmd_admin() {
+  [ -f "$ENV_FILE" ] || die ".env not found. Run scripts/setup.sh first."
+  local user="admin" http=0 pass again hash
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --user) user="${2:-}"; [ -n "$user" ] || die "--user needs a name."; shift 2 ;;
+      --http) http=1; shift ;;
+      *) die "Unknown option: $1" ;;
+    esac
+  done
+  command -v openssl >/dev/null 2>&1 || die "openssl is needed to hash the password."
+  printf 'Dashboard password for %s: ' "$user" >&2; IFS= read -rs pass; echo >&2
+  printf 'Again: ' >&2; IFS= read -rs again; echo >&2
+  [ "$pass" = "$again" ] || die "The two passwords differ."
+  [ "${#pass}" -ge 8 ] || die "Use at least 8 characters."
+  hash="$(printf '%s' "$pass" | openssl passwd -apr1 -stdin)"
+  env_set ADMIN_USERNAME "$user"
+  # docker compose treats $ as the start of a variable, so each $ in the hash is doubled.
+  env_set ADMIN_PASSWORD_HASH "${hash//\$/\$\$}"
+  if [ "$http" = 1 ]; then env_set AUTH_COOKIE_SECURE false; fi
+  info "Login saved for '${user}'. Apply it with: docker compose up -d"
+  if [ "$http" != 1 ]; then
+    info "If you open the dashboard over plain http://, run this again with --http or the login will not stick."
+  fi
+}
+
 # ----------------------------------------------------------------------- main
 cmd="${1:-init}"
 case "$cmd" in
@@ -470,6 +498,7 @@ case "$cmd" in
   show) shift; cmd_show ;;
   tls) shift; cmd_tls "$@" ;;
   check) shift; cmd_check "$@" ;;
+  admin) shift; cmd_admin "$@" ;;
   -h|--help|help) usage ;;
   --*) cmd_init "$@" ;;
   *) usage; exit 1 ;;

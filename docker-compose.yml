@@ -50,7 +50,7 @@ services:
       MQTT_BROKER_URL: ${MQTT_BROKER_URL:-mqtt://mosquitto:1883}
       MQTT_USERNAME: ${MQTT_USERNAME:?Set MQTT_USERNAME in .env}
       MQTT_PASSWORD: ${MQTT_PASSWORD:?Set MQTT_PASSWORD in .env}
-      CLOTHES_MQTT_TOPIC: ${CLOTHES_MQTT_TOPIC:-clothes/raw}
+      CLOTHES_MQTT_TOPIC: ${CLOTHES_MQTT_TOPIC:-}
       CLOTHES_AIRBOX_ID: ${CLOTHES_AIRBOX_ID:-}
       # Port the clips use to download firmware updates from this host (nginx in the web container).
       FIRMWARE_HTTP_PORT: ${WEB_PORT:-8088}

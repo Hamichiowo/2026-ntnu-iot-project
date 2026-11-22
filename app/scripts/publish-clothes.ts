@@ -3,7 +3,11 @@ import mqtt from 'mqtt';
 const client = mqtt.connect(process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883', {
   username: process.env.MQTT_USERNAME, password: process.env.MQTT_PASSWORD,
 });
-const topic = process.env.CLOTHES_MQTT_TOPIC || 'clothes/raw';
+// A simulated clip has its own device id, so it shows up as its own clip (the first one on an
+// empty database takes over 衣夾-01).
+const deviceId = process.env.SIM_DEVICE_ID || 'AABBCC000001';
+if (!/^[0-9A-F]{12}$/.test(deviceId)) throw new Error('SIM_DEVICE_ID must be 12 hex digits (0-9, A-F)');
+const topic = `clothes/${deviceId}/raw`;
 const count = Number(process.env.SIM_COUNT || 60);
 if (!Number.isInteger(count) || count < 1 || count > 3600) throw new Error('SIM_COUNT must be 1..3600');
 let timer: ReturnType<typeof setInterval>;

@@ -67,6 +67,10 @@ typedef enum { OPEN_SETUP, CLOSE_SETUP, TEST_SETTINGS } command_kind_t;
 typedef struct { command_kind_t kind; settings_t settings; } command_t;
 
 static settings_t active;
+// This board's id (its Wi-Fi MAC, 12 hex digits) and its topic base "clothes/<id>". Readings go to
+// "<base>/raw", the update command is read from "<base>/ota", firmware reports go to "<base>/fw".
+// settings_t.topic is no longer used; it stays in the struct so saved settings keep loading.
+static char device_id[13], topic_base[24];
 static EventGroupHandle_t events;
 static SemaphoreHandle_t state_lock, mqtt_lock, wifi_lock;
 static QueueHandle_t commands;
@@ -136,7 +140,7 @@ static void load_settings(void)
     snprintf(active.host, sizeof(active.host), "%s", APP_MQTT_HOST);
     snprintf(active.username, sizeof(active.username), "%s", APP_MQTT_USERNAME);
     snprintf(active.mqtt_password, sizeof(active.mqtt_password), "%s", APP_MQTT_PASSWORD);
-    snprintf(active.topic, sizeof(active.topic), "%s", APP_MQTT_TOPIC);
+    snprintf(active.topic, sizeof(active.topic), "auto");
     nvs_handle_t handle;
     if (nvs_open("clothes_net", NVS_READONLY, &handle) == ESP_OK) {
         settings_t saved = {0};
@@ -146,6 +150,9 @@ static void load_settings(void)
         nvs_close(handle);
     }
     uint8_t mac[6];
+    ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
+    snprintf(device_id, sizeof(device_id), "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    snprintf(topic_base, sizeof(topic_base), "clothes/%s", device_id);
     ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP));
     snprintf(ap_ssid, sizeof(ap_ssid), "Clothes-Setup-%02X%02X", mac[4], mac[5]);
     snprintf(ap_password, sizeof(ap_password), "%s", APP_SETUP_AP_PASSWORD);
@@ -209,8 +216,8 @@ static void mqtt_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         rtc_missed = 0;
         save_ap_pending = true;
         // The broker answers the subscription with the retained update command, if there is one.
-        char topic[sizeof(active.topic) + 8];
-        snprintf(topic, sizeof(topic), "%s/ota", active.topic);
+        char topic[sizeof(topic_base) + 8];
+        snprintf(topic, sizeof(topic), "%s/ota", topic_base);
         xSemaphoreTake(state_lock, portMAX_DELAY); ota_command[0] = 0; xSemaphoreGive(state_lock);
         xEventGroupClearBits(events, SUBSCRIBED);
         esp_mqtt_client_subscribe(client, topic, 1);
@@ -300,13 +307,13 @@ bool network_publish_wait(const char *json, int network_ms, int ack_ms)
         }
         vTaskDelay(pdMS_TO_TICKS(50));
     }
-    return network_publish_to("", json, false, ack_ms);
+    return network_publish_to("/raw", json, false, ack_ms);
 }
 
 bool network_publish_to(const char *suffix, const char *json, bool retain, int ack_ms)
 {
-    char topic[sizeof(active.topic) + 8];
-    snprintf(topic, sizeof(topic), "%s%s", active.topic, suffix);
+    char topic[sizeof(topic_base) + 8];
+    snprintf(topic, sizeof(topic), "%s%s", topic_base, suffix);
     int id = -1;
     xSemaphoreTake(mqtt_lock, portMAX_DELAY);
     if (client && network_ready()) {
@@ -535,7 +542,7 @@ static esp_err_t config_get(httpd_req_t *req)
     cJSON_AddBoolToObject(json,"wifi_password_saved",active.wifi_password[0]);
     cJSON_AddStringToObject(json,"host",active.host);
     cJSON_AddStringToObject(json,"username",active.username);
-    cJSON_AddStringToObject(json,"topic",active.topic);
+    cJSON_AddStringToObject(json,"device_id",device_id);
     cJSON_AddNumberToObject(json,"port",active.port);
     cJSON_AddBoolToObject(json,"tls",active.tls);
     cJSON_AddBoolToObject(json,"mqtt_password_saved",active.mqtt_password[0]);
@@ -626,10 +633,9 @@ static bool parse_settings(cJSON *json, settings_t *candidate, char *error, size
     if (length && length<8) goto invalid;
     if (length==64) for (int i=0;i<64;i++) if (!isxdigit((unsigned char)c->wifi_password[i])) goto invalid;
     if (!json_string(json,"host",c->host,sizeof(c->host)) || !c->host[0] ||
-            !json_string(json,"username",c->username,sizeof(c->username)) ||
-            !json_string(json,"topic",c->topic,sizeof(c->topic)) || !c->topic[0]) goto invalid;
+            !json_string(json,"username",c->username,sizeof(c->username))) goto invalid;
     for (const char *p=c->host;*p;p++) if (!(isalnum((unsigned char)*p) || *p=='.' || *p=='-')) goto invalid;
-    if (strchr(c->topic,'#') || strchr(c->topic,'+')) goto invalid;
+    snprintf(c->topic,sizeof(c->topic),"auto");
     cJSON *port=cJSON_GetObjectItemCaseSensitive(json,"port"), *tls=cJSON_GetObjectItemCaseSensitive(json,"tls");
     if (!cJSON_IsNumber(port) || !isfinite(port->valuedouble) || port->valuedouble<1 ||
             port->valuedouble>65535 || floor(port->valuedouble)!=port->valuedouble || !cJSON_IsBool(tls)) goto invalid;
@@ -638,7 +644,7 @@ static bool parse_settings(cJSON *json, settings_t *candidate, char *error, size
             !json_string(json,"mqtt_password",c->mqtt_password,sizeof(c->mqtt_password))) goto invalid;
     return true;
 invalid:
-    snprintf(error,size,"請檢查 Wi-Fi 名稱／密碼、MQTT 網域、port（1–65535）與 topic。新網路須填密碼或勾選無密碼。");
+    snprintf(error,size,"請檢查 Wi-Fi 名稱／密碼、MQTT 網域與 port（1–65535）。新網路須填密碼或勾選無密碼。");
     return false;
 }
 
@@ -867,6 +873,7 @@ void network_setup_init(bool woke_by_button, bool woke_from_sleep)
     assert(xTaskCreate(network_worker,"network_setup",8192,NULL,4,NULL)==pdPASS);
     assert(xTaskCreate(button_worker,"setup_button",3072,NULL,3,NULL)==pdPASS);
     if (!valid_strings(&active)) { command_t cmd={.kind=OPEN_SETUP}; xQueueSend(commands,&cmd,0); }
+    if (!woke_from_sleep) printf("NET device id %s, publishing to %s/raw\n", device_id, topic_base);
     if (!woke_from_sleep)
         printf("NET Hold GPIO0 for 3 seconds to configure (also wakes the board from sleep); USB command: setup\n");
 }
