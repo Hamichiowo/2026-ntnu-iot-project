@@ -163,8 +163,10 @@ const bucketSeconds = ref(0);
 
 export const PRESETS = [
   { minutes: 5, label: '5 分' }, { minutes: 15, label: '15 分' }, { minutes: 60, label: '1 小時' },
-  { minutes: 360, label: '6 小時' }, { minutes: 1440, label: '24 小時' },
+  { minutes: 360, label: '6 小時' }, { minutes: 7 * 1440, label: '1 週' },
 ];
+// Longest window the history (and its CSV export) can show.
+export const HISTORY_WINDOW_MAX_MS = 7 * DAY_MS;
 const mode = ref('15');  // preset minutes as text, or 'custom'
 const customStart = ref('');
 const customEnd = ref('');
@@ -172,12 +174,15 @@ const rangeError = ref('');
 const range = ref({ start: new Date(Date.now() - 15 * 60000), end: new Date() });
 let historyUpdated = 0;
 let historyRequest = 0;
-const refreshSeconds = computed(() => Number(mode.value) > 60 ? 30 : 5);
+// Short windows refresh often; a week changes by one point per few minutes, so it refreshes rarely.
+const refreshSeconds = computed(() => Number(mode.value) > 1440 ? 300 : Number(mode.value) > 60 ? 30 : 5);
 
 async function loadHistory(start: Date, end: Date) {
   const id = ++historyRequest;  // ignore responses for a range the user already left
   try {
-    const params = withClip(new URLSearchParams({ start: start.toISOString(), end: end.toISOString(), limit: '5000' }));
+    // Over a day the server averages into buckets; about 2000 points (5 minutes over a week) is plenty for a chart.
+    const limit = end.getTime() - start.getTime() > DAY_MS ? '2016' : '5000';
+    const params = withClip(new URLSearchParams({ start: start.toISOString(), end: end.toISOString(), limit }));
     const data = await request(`/api/v1/clothes/history?${params}`);
     if (!historyUsers || id !== historyRequest) return;
     range.value = { start, end };
@@ -197,7 +202,7 @@ function applyCustom() {
   const start = fromTaipeiInput(customStart.value), end = fromTaipeiInput(customEnd.value);
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) rangeError.value = '請輸入開始與結束時間。';
   else if (start >= end) rangeError.value = '結束時間必須晚於開始時間。';
-  else if (end.getTime() - start.getTime() > DAY_MS) rangeError.value = '一次最多查詢 24 小時。';
+  else if (end.getTime() - start.getTime() > HISTORY_WINDOW_MAX_MS) rangeError.value = '一次最多查詢 7 天。';
   else {
     rangeError.value = ''; historyLoading.value = true; records.value = [];
     void loadHistory(start, end);

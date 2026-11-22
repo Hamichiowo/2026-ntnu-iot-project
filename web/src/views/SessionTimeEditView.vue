@@ -44,7 +44,8 @@
             <p class="muted">可以把圖表範圍拉大，或直接在右邊輸入時間。</p>
           </div>
           <RawCharts v-else :records="history.records" :air-records="history.air" :range="win" :stale-after-ms="history.staleAfterMs"
-            :bucket-seconds="history.bucketSeconds" :air-device-id="history.airDeviceId" :plugins="[selectPlugin]" />
+            :bucket-seconds="history.bucketSeconds" :air-device-id="history.airDeviceId" :plugins="[selectPlugin]"
+            :dividers="detail ? mock.clipById(detail.clipId)?.dividers : null" />
         </template>
       </div>
 

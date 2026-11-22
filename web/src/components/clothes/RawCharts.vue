@@ -3,13 +3,16 @@
     <div class="sensor-head">
       <h2><i :style="{ background: palette[s.color] }"></i>{{ s.method }} <small class="muted">{{ s.hardware }}</small>
         <em v-if="s.key === chosen" class="chosen-tag">預測使用</em></h2>
-      <span v-if="latest !== undefined" class="reading num">{{ formatRaw(latest?.[s.key]) }}<small> 原始計數</small></span>
+      <span v-if="latest !== undefined && ohm(s.key) && latestOhm" class="reading num">{{ latestOhm }}<small> 布料電阻</small></span>
+      <span v-else-if="latest !== undefined" class="reading num">{{ formatRaw(latest?.[s.key]) }}<small> 原始計數</small></span>
     </div>
     <p v-if="latest && latest[s.key] === null" class="wa-tx small">本筆讀取失敗</p>
     <div class="chart" :class="{ selectable }" :title="selectable ? '按住拖曳可選取時段' : undefined">
-      <Line :data="chartDatasets[s.key]" :options="chartOptions" :plugins="plugins" />
+      <Line :data="chartDatasets[s.key]" :options="ohm(s.key) ? ohmChartOptions : chartOptions" :plugins="plugins" />
     </div>
-    <span class="muted small">{{ s.key }} · {{ s.description }}</span>
+    <span v-if="ohm(s.key)" class="muted small">由 ADS1115 讀值換算（{{ dividerNote }}）· 對數刻度 · 原始讀值 {{ formatRaw(latest?.ads1115_raw) }}</span>
+    <span v-else-if="s.key === 'ads1115_raw'" class="muted small">{{ s.key }} · {{ s.description }} · 還沒設定分壓電阻，所以顯示原始計數</span>
+    <span v-else class="muted small">{{ s.key }} · {{ s.description }}</span>
   </section>
 
   <section v-if="airRecords.length" class="panel sensor">
@@ -28,12 +31,13 @@
 // temperature and humidity, over a fixed time window. Pass a range-select plugin to make them selectable.
 import { computed } from 'vue';
 import { Line } from 'vue-chartjs';
-import { Chart as ChartJS, LinearScale, PointElement, LineElement, Tooltip, Legend, type ChartOptions, type Plugin } from 'chart.js';
+import { Chart as ChartJS, LinearScale, LogarithmicScale, PointElement, LineElement, Tooltip, Legend, type ChartOptions, type Plugin } from 'chart.js';
 import { useTheme } from '../../composables/useTheme';
 import { SENSORS, type AirReading, type Field, type Reading, type Sensor } from '../../composables/useClothesData';
 import { formatAir, formatRaw, formatTime } from '../../utils/format';
+import { countToOhm, dividerAt, formatOhm, ohmMax, ohmText, type Divider } from '../../utils/resistance';
 
-ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend);
+ChartJS.register(LinearScale, LogarithmicScale, PointElement, LineElement, Tooltip, Legend);
 
 const props = withDefaults(defineProps<{
   records: Reading[];
@@ -46,16 +50,39 @@ const props = withDefaults(defineProps<{
   latest?: Reading | null;  // undefined = no reading in the header
   airDeviceId?: string | null;
   plugins?: Plugin<'line'>[];
-}>(), { bucketSeconds: 0, sensors: () => SENSORS, chosen: undefined, latest: undefined, airDeviceId: null, plugins: () => [] });
+  // The clip's divider settings: with any, the resistance chart shows ohms on a log scale.
+  dividers?: Divider[] | null;
+}>(), { bucketSeconds: 0, sensors: () => SENSORS, chosen: undefined, latest: undefined, airDeviceId: null, plugins: () => [], dividers: null });
 
 const { palette } = useTheme();
 const selectable = computed(() => props.plugins.length > 0);
 
 const timeTick = (value: number) => {
-  const long = props.range.end.getTime() - props.range.start.getTime() > 6 * 60 * 60000;
+  const span = props.range.end.getTime() - props.range.start.getTime();
+  // Several days: dates only (ticks fall on Taipei midnight).
+  if (span > 3 * DAY) return new Date(value).toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric' });
+  const long = span > 6 * 60 * 60000;
   return new Date(value).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false,
     ...(long ? { month: 'numeric', day: 'numeric' } : {}), hour: '2-digit', minute: '2-digit', ...(long ? {} : { second: '2-digit' }) });
 };
+
+// ---------------------------------------------------------------- resistance in ohms
+const DAY = 24 * 60 * 60000;
+const hasDividers = computed(() => !!props.dividers?.length);
+const ohm = (key: Field) => key === 'ads1115_raw' && hasDividers.value;
+const latestOhm = computed(() => props.latest ? ohmText(props.latest.ads1115_raw, new Date(props.latest.timestamp).getTime(), props.dividers) : null);
+const dividerNote = computed(() => {
+  const d = props.dividers?.[props.dividers.length - 1];
+  return d ? `分壓 ${formatOhm(d.divider_ohm)}，乾布超過 ${formatOhm(ohmMax(d))} 時顯示為上限` : '';
+});
+// Plotted value: ohms with the setting in force at that time; open readings sit at that setting's
+// upper limit (shown as "> limit"); nothing before the first setting.
+function plotOhm(count: number | null, time: number): number | null {
+  const d = dividerAt(props.dividers, time);
+  if (!d || count == null) return null;
+  const value = countToOhm(count, d)!;
+  return Number.isFinite(value) ? Math.max(value, 1000) : ohmMax(d);
+}
 
 function chartData(sensor: Sensor) {
   const points: { x: number; y: number | null }[] = [];
@@ -66,7 +93,7 @@ function chartData(sensor: Sensor) {
   for (const record of props.records) {
     const time = new Date(record.timestamp).getTime();
     if (previous !== undefined && time - previous > gapMs) points.push({ x: previous + 1, y: null });
-    points.push({ x: time, y: record[sensor.key] });
+    points.push({ x: time, y: ohm(sensor.key) ? plotOhm(record[sensor.key], time) : record[sensor.key] });
     previous = time;
   }
   const color = palette.value[sensor.color];
@@ -75,6 +102,33 @@ function chartData(sensor: Sensor) {
 }
 // Built once per data change, so typing in a form or dragging never rebuilds the charts.
 const chartDatasets = computed(() => Object.fromEntries(SENSORS.map((s) => [s.key, chartData(s)])) as Record<Field, ReturnType<typeof chartData>>);
+
+// The resistance chart in ohms: log scale (fabric goes from kΩ when wet to tens of MΩ when dry).
+const ohmChartOptions = computed<ChartOptions<'line'>>(() => {
+  const p = palette.value;
+  const base = chartOptions.value;
+  return {
+    ...base,
+    plugins: { ...base.plugins, tooltip: { backgroundColor: p.tooltip, callbacks: {
+      title: (items) => items.length && items[0].parsed.x != null ? formatTime(items[0].parsed.x) : '',
+      label: (item) => {
+        const d = dividerAt(props.dividers, item.parsed.x ?? 0);
+        const y = item.parsed.y;
+        if (y == null) return '';
+        return d && y >= ohmMax(d) ? `布料電阻 > ${formatOhm(ohmMax(d))}（接近乾布）` : `布料電阻 ${formatOhm(y)}`;
+      },
+    } } },
+    scales: {
+      x: base.scales!.x!,
+      y: { type: 'logarithmic', title: { display: true, text: '布料電阻（對數）', color: p.mu },
+        ticks: { color: p.mu, callback: (value) => {
+          const v = Number(value);
+          return /^[1]$/.test(String(v / 10 ** Math.floor(Math.log10(v)))) ? formatOhm(v) : '';
+        } },
+        grid: { color: p.grid }, border: { color: p.bd } },
+    },
+  };
+});
 
 const envChartData = computed(() => {
   const series = (key: 'temp' | 'humi') => {
@@ -94,8 +148,10 @@ const envChartData = computed(() => {
   return { datasets: [series('temp'), series('humi')] };
 });
 
-// Round tick spacing (whole minutes/hours) so labels read 10:00, 12:00 … rather than 10:26.
-const TICK_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 240, 360, 720].map((m) => m * 60000);
+// Round tick spacing (whole minutes/hours/days) so labels read 10:00, 12:00 … rather than 10:26.
+const TICK_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 240, 360, 720, 1440].map((m) => m * 60000);
+// Tick positions on a step from Taipei midnight, so day ticks land on 00:00 local time.
+const TAIPEI_OFFSET = 8 * 60 * 60000;
 const tickStep = (spanMs: number) => TICK_STEPS.find((step) => spanMs / step <= 7) ?? TICK_STEPS[TICK_STEPS.length - 1];
 
 // Fixed x range: the axis shows the whole requested window, even when data covers only part of it.
@@ -111,8 +167,14 @@ const chartOptions = computed<ChartOptions<'line'>>(() => {
     } } },
     scales: {
       x: { type: 'linear', min: start.getTime(), max: end.getTime(),
-        ticks: { color: p.mu, stepSize: tickStep(end.getTime() - start.getTime()), maxTicksLimit: 8,
-          callback: (value) => timeTick(Number(value)) }, grid: { display: false }, border: { color: p.bd } },
+        afterBuildTicks: (axis) => {
+          const step = tickStep(end.getTime() - start.getTime());
+          const first = Math.ceil((start.getTime() + TAIPEI_OFFSET) / step) * step - TAIPEI_OFFSET;
+          const ticks = [];
+          for (let t = first; t <= end.getTime() && ticks.length < 12; t += step) ticks.push({ value: t });
+          axis.ticks = ticks;
+        },
+        ticks: { color: p.mu, callback: (value) => timeTick(Number(value)) }, grid: { display: false }, border: { color: p.bd } },
       y: { title: { display: true, text: '原始計數', color: p.mu }, ticks: { color: p.mu, precision: 0 }, grid: { color: p.grid }, border: { color: p.bd } },
     },
   };
