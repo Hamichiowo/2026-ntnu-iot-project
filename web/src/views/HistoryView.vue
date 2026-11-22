@@ -211,6 +211,7 @@ import { ref, onMounted, computed, reactive } from 'vue';
 import { useRoute } from 'vue-router';
 import SensorChart from '../components/SensorChart.vue';
 import { METRIC_DEFINITIONS, METRIC_GROUPS, type MetricGroup } from '../constants/metrics';
+import { apiFetch } from '../composables/useAuth';
 
 const route = useRoute();
 const sensorChartRef = ref<any>(null);
@@ -261,7 +262,7 @@ function getTodayString(): string {
 
 async function loadDevices() {
   try {
-    const res = await fetch('/api/v1/devices');
+    const res = await apiFetch('/api/v1/devices');
     const data = await res.json();
     if (data.success && data.devices.length > 0) {
       devices.value = data.devices;
@@ -302,7 +303,7 @@ async function loadDevices() {
 async function loadAvailableDates() {
   if (!selectedDeviceId.value) return;
   try {
-    const res = await fetch(`/api/v1/devices/${selectedDeviceId.value}/dates`);
+    const res = await apiFetch(`/api/v1/devices/${selectedDeviceId.value}/dates`);
     const data = await res.json();
     if (data.success) {
       availableDates.value = data.dates || [];
@@ -363,7 +364,7 @@ async function queryHistory() {
       end: endDate.value,
       step: String(step.value),
     });
-    const res = await fetch(`/api/v1/devices/${selectedDeviceId.value}/sensor/history?${query}`);
+    const res = await apiFetch(`/api/v1/devices/${selectedDeviceId.value}/sensor/history?${query}`);
     const data = await res.json();
     if (data.success) {
       historyData.value = data.records || [];

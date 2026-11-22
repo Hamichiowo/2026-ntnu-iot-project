@@ -171,6 +171,7 @@ import { useTheme } from '../composables/useTheme';
 import DemoTag from '../components/clothes/DemoTag.vue';
 import { PRESETS, SENSORS, useClothesHistory, withClip, type Field, type Sensor } from '../composables/useClothesData';
 import { useClothesMock, type Method } from '../composables/useClothesMock';
+import { apiFetch } from '../composables/useAuth';
 import { DAY_MS, agoText, clock, formatAir, formatRaw, formatTime, fromTaipeiInput, toTaipeiInput } from '../utils/format';
 
 ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend);
@@ -305,7 +306,7 @@ async function downloadCsv() {
   exporting.value = true; exportNotice('');
   try {
     const params = withClip(new URLSearchParams({ start: start.toISOString(), end: end.toISOString() }));
-    const response = await fetch(`/api/v1/clothes/export?${params}`, { cache: 'no-store' });
+    const response = await apiFetch(`/api/v1/clothes/export?${params}`, { cache: 'no-store' });
     if (!response.ok) {
       const body = await response.json().catch(() => null);
       throw new Error(body?.error || `HTTP ${response.status}`);

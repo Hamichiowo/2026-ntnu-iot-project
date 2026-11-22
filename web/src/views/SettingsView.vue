@@ -101,6 +101,7 @@
 import { ref, onMounted } from 'vue';
 import { useClothesMock } from '../composables/useClothesMock';
 import { useSettings } from '../composables/useSettings';
+import { apiFetch } from '../composables/useAuth';
 
 const { demoEnabled, setDemoEnabled } = useClothesMock();
 const { settingsError } = useSettings();
@@ -125,8 +126,8 @@ const stats = ref<any>({});
 async function checkHealthAndStats() {
   try {
     const [hRes, sRes] = await Promise.all([
-      fetch('/api/v1/system/health'),
-      fetch('/api/v1/system/stats'),
+      apiFetch('/api/v1/system/health'),
+      apiFetch('/api/v1/system/stats'),
     ]);
     health.value = await hRes.json();
     const sData = await sRes.json();

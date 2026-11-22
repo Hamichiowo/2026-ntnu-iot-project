@@ -509,6 +509,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import StatusBadge from '../components/StatusBadge.vue';
 import IntervalSlider from '../components/IntervalSlider.vue';
+import { apiFetch } from '../composables/useAuth';
 
 const route = useRoute();
 const deviceId = route.params.id as string;
@@ -552,7 +553,7 @@ const activeModules = computed<string[]>(() => {
 
 async function loadDetail() {
   try {
-    const res = await fetch(`/api/v1/devices/${deviceId}`);
+    const res = await apiFetch(`/api/v1/devices/${deviceId}`);
     const data = await res.json();
     if (data.success) {
       device.value = data.device;
@@ -571,7 +572,7 @@ async function loadDetail() {
 async function loadLatestSensor() {
   refreshing.value = true;
   try {
-    const res = await fetch(`/api/v1/devices/${deviceId}/sensor/latest`);
+    const res = await apiFetch(`/api/v1/devices/${deviceId}/sensor/latest`);
     const data = await res.json();
     if (data.success && data.data) {
       const s = data.data.sensor || data.data;
@@ -587,7 +588,7 @@ async function loadLatestSensor() {
 
 async function loadDates() {
   try {
-    const res = await fetch(`/api/v1/devices/${deviceId}/dates`);
+    const res = await apiFetch(`/api/v1/devices/${deviceId}/dates`);
     const data = await res.json();
     if (data.success) {
       storedDates.value = data.dates || [];
@@ -606,7 +607,7 @@ async function saveName() {
   if (!nameInput.value.trim()) return;
   savingName.value = true;
   try {
-    const res = await fetch(`/api/v1/devices/${deviceId}`, {
+    const res = await apiFetch(`/api/v1/devices/${deviceId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ display_name: nameInput.value.trim() }),
@@ -630,7 +631,7 @@ async function saveConfig() {
   saving.value = true;
   saveSuccess.value = false;
   try {
-    const res = await fetch(`/api/v1/devices/${deviceId}/config`, {
+    const res = await apiFetch(`/api/v1/devices/${deviceId}/config`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config.value),
@@ -670,7 +671,7 @@ async function confirmCommand(action: string) {
 
   actionNotice.value = null;
   try {
-    const res = await fetch(`/api/v1/devices/${deviceId}/command`, {
+    const res = await apiFetch(`/api/v1/devices/${deviceId}/command`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action }),
