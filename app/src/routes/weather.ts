@@ -193,6 +193,36 @@ export function summarizeCounty(observations: Observation[], county: string) {
   };
 }
 
+export function selectDistrictObservation(observations: Observation[], county: string, district?: string) {
+  const countyObservations = observations.filter((item) => item.county === county && item.town && item.temp !== null);
+  if (!countyObservations.length) return null;
+
+  const defaultObservation = countyObservations.find((item) => item.name === defaultStation());
+  const selectedDistrict = district || defaultObservation?.town
+    || [...new Set(countyObservations.map((item) => item.town))].sort((a, b) => a.localeCompare(b, 'zh-Hant'))[0];
+  const selected = countyObservations
+    .filter((item) => item.town === selectedDistrict)
+    .sort((a, b) => b.observed_at.localeCompare(a.observed_at) || a.name.localeCompare(b.name, 'zh-Hant'))[0];
+  if (!selected) return null;
+
+  return {
+    county: selected.county,
+    district: selected.town,
+    station_id: selected.id,
+    station_name: selected.name,
+    observed_at: selected.observed_at,
+    weather: selected.weather,
+    temp: round1(selected.temp),
+    hum: round1(selected.hum),
+    rain_mm: round1(selected.rain_mm),
+    wind_speed: round1(selected.wind_speed),
+    wind_direction: selected.wind_direction === null ? null : Math.round(selected.wind_direction),
+    gust_speed: round1(selected.gust_speed),
+    pressure: round1(selected.pressure),
+    stations: 1,
+  };
+}
+
 const defaultStation = () => process.env.CWA_STATION || '臺北';
 const defaultCounty = (observations: Observation[]) => observations.find((item) => item.name === defaultStation())?.county;
 
@@ -204,9 +234,17 @@ async function countyCurrent(requested: string | undefined) {
   return summarizeCounty(observations, county);
 }
 
-async function countyDetail(requested: string | undefined) {
+async function districtCurrent(requestedCounty: string | undefined, requestedDistrict: string | undefined) {
+  const observationMap = await loadObservations();
+  const observations = [...observationMap.values()];
+  const county = requestedCounty || defaultCounty(observations);
+  if (!county) return null;
+  return selectDistrictObservation(observations, county, requestedDistrict);
+}
+
+async function countyDetail(requestedCounty: string | undefined, requestedDistrict: string | undefined) {
   const [current, forecastMap] = await Promise.all([
-    countyCurrent(requested),
+    districtCurrent(requestedCounty, requestedDistrict),
     loadForecasts().catch(() => new Map<string, ForecastPeriod[]>()),
   ]);
   if (!current) return null;
@@ -218,6 +256,21 @@ weatherRoute.get('/counties', async (context) => {
     const all = [...(await loadObservations()).values()].filter((item) => item.temp !== null);
     const counties = [...new Set(all.map((item) => item.county))].sort((a, b) => a.localeCompare(b, 'zh-Hant'));
     return context.json({ success: true, data: counties, default: defaultCounty(all) ?? counties[0] ?? null });
+  } catch (error) {
+    return context.json({ success: false, error: (error as Error).message }, 502);
+  }
+});
+
+weatherRoute.get('/districts', async (context) => {
+  try {
+    const observations = [...(await loadObservations()).values()];
+    const county = context.req.query('county') || defaultCounty(observations);
+    if (!county) return context.json({ success: false, error: '找不到這個縣市' }, 404);
+    const matching = observations.filter((item) => item.county === county && item.town && item.temp !== null);
+    const districts = [...new Set(matching.map((item) => item.town))].sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+    if (!districts.length) return context.json({ success: false, error: '找不到這個縣市' }, 404);
+    const preferred = matching.find((item) => item.name === defaultStation())?.town;
+    return context.json({ success: true, data: districts, default: preferred && districts.includes(preferred) ? preferred : districts[0] });
   } catch (error) {
     return context.json({ success: false, error: (error as Error).message }, 502);
   }
@@ -235,8 +288,8 @@ weatherRoute.get('/outdoor', async (context) => {
 
 weatherRoute.get('/detail', async (context) => {
   try {
-    const detail = await countyDetail(context.req.query('county'));
-    if (!detail) return context.json({ success: false, error: '找不到這個縣市' }, 404);
+    const detail = await countyDetail(context.req.query('county'), context.req.query('district'));
+    if (!detail) return context.json({ success: false, error: '找不到這個縣市或行政區' }, 404);
     return context.json({ success: true, data: detail });
   } catch (error) {
     return context.json({ success: false, error: (error as Error).message }, 502);
