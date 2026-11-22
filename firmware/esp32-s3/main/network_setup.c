@@ -52,6 +52,7 @@ _Static_assert(sizeof(APP_SETUP_AP_PASSWORD) >= 9 && sizeof(APP_SETUP_AP_PASSWOR
 #define WIFI_DOWN BIT3
 #define CANCEL BIT4
 #define PUBLISHED BIT5
+#define SUBSCRIBED BIT6
 #define VERSION 1
 #define SETUP_PIN GPIO_NUM_0
 
@@ -75,10 +76,19 @@ static httpd_handle_t server;
 static bool ap_open, testing, allow_publish, reconnect_wifi, portal_paused_sta;
 static volatile bool setup_pending, woke_by_setup_button, going_to_sleep;
 static volatile int acked_msg_id = -1;
+// Retained update command from "<topic>/ota"; empty when the broker holds none.
+static char ota_command[400];
 // Fast reconnect after deep sleep: remember the access point last joined (cleared on power-on).
 RTC_DATA_ATTR static uint8_t rtc_bssid[6], rtc_channel;
 RTC_DATA_ATTR static uint32_t rtc_ssid_hash;
 static bool using_ap_hint;
+// Some networks (dorms) do not let devices on different access points reach each other, so the
+// broker answers only through certain access points. Reports lost with Wi-Fi up but no broker
+// are counted; after two the board moves to another access point of the same SSID and avoids
+// the ones that failed. The access point that last worked is kept in NVS for the next power-on.
+RTC_DATA_ATTR static uint8_t rtc_missed, rtc_bad[4][6], rtc_bad_count;
+static volatile bool save_ap_pending;
+typedef struct { uint32_t ssid_hash; uint8_t channel, bssid[6]; } good_ap_t;
 static settings_t applied;  // last Wi-Fi settings handed to the driver
 static int last_reason;
 static char phase[24] = "connecting", message[192] = "正在連線";
@@ -196,11 +206,30 @@ static void mqtt_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     if (id == MQTT_EVENT_CONNECTED) {
         xEventGroupSetBits(events, MQTT_UP);
         printf("NET MQTT connected\n");
+        rtc_missed = 0;
+        save_ap_pending = true;
+        // The broker answers the subscription with the retained update command, if there is one.
+        char topic[sizeof(active.topic) + 8];
+        snprintf(topic, sizeof(topic), "%s/ota", active.topic);
+        xSemaphoreTake(state_lock, portMAX_DELAY); ota_command[0] = 0; xSemaphoreGive(state_lock);
+        xEventGroupClearBits(events, SUBSCRIBED);
+        esp_mqtt_client_subscribe(client, topic, 1);
+    } else if (id == MQTT_EVENT_SUBSCRIBED) {
+        xEventGroupSetBits(events, SUBSCRIBED);
+    } else if (id == MQTT_EVENT_DATA) {
+        // Only "<topic>/ota" is subscribed. Commands are short; anything split or oversized is dropped.
+        if (event->current_data_offset == 0 && event->data_len == event->total_data_len &&
+                event->data_len < (int)sizeof(ota_command)) {
+            xSemaphoreTake(state_lock, portMAX_DELAY);
+            memcpy(ota_command, event->data, event->data_len);
+            ota_command[event->data_len] = 0;
+            xSemaphoreGive(state_lock);
+        }
     } else if (id == MQTT_EVENT_PUBLISHED) {
         acked_msg_id = event->msg_id;
         xEventGroupSetBits(events, PUBLISHED);
     } else if (id == MQTT_EVENT_DISCONNECTED || id == MQTT_EVENT_ERROR) {
-        xEventGroupClearBits(events, MQTT_UP);
+        xEventGroupClearBits(events, MQTT_UP | SUBSCRIBED);
         if (id==MQTT_EVENT_ERROR && event->error_handle) {
             printf("NET MQTT transport error: esp=0x%x tls=0x%x verify=0x%x socket=%d heap=%lu\n",
                 event->error_handle->esp_tls_last_esp_err, -event->error_handle->esp_tls_stack_err,
@@ -264,24 +293,47 @@ bool network_publish_wait(const char *json, int network_ms, int ack_ms)
 {
     int64_t end = esp_timer_get_time() + network_ms * 1000LL;
     while (!network_ready()) {
-        if (esp_timer_get_time() > end) return false;
+        if (esp_timer_get_time() > end) {
+            EventBits_t bits = xEventGroupGetBits(events);
+            if ((bits & WIFI_UP) && !(bits & MQTT_UP) && rtc_missed < 255) rtc_missed++;
+            return false;
+        }
         vTaskDelay(pdMS_TO_TICKS(50));
     }
+    return network_publish_to("", json, false, ack_ms);
+}
+
+bool network_publish_to(const char *suffix, const char *json, bool retain, int ack_ms)
+{
+    char topic[sizeof(active.topic) + 8];
+    snprintf(topic, sizeof(topic), "%s%s", active.topic, suffix);
     int id = -1;
     xSemaphoreTake(mqtt_lock, portMAX_DELAY);
     if (client && network_ready()) {
         xEventGroupClearBits(events, PUBLISHED);
-        id = esp_mqtt_client_publish(client, active.topic, json, 0, 1, 0);
+        id = esp_mqtt_client_publish(client, topic, json, 0, 1, retain);
     }
     xSemaphoreGive(mqtt_lock);
     if (id < 0) return false;
-    end = esp_timer_get_time() + ack_ms * 1000LL;
+    int64_t end = esp_timer_get_time() + ack_ms * 1000LL;
     while (esp_timer_get_time() < end) {
         if ((xEventGroupWaitBits(events, PUBLISHED, pdTRUE, pdFALSE, pdMS_TO_TICKS(50)) & PUBLISHED) &&
                 acked_msg_id == id) return true;
     }
     return false;
 }
+
+int network_ota_command(char *out, size_t size, int wait_ms)
+{
+    if (!(xEventGroupWaitBits(events, SUBSCRIBED, pdFALSE, pdTRUE, pdMS_TO_TICKS(wait_ms)) & SUBSCRIBED)) return -1;
+    vTaskDelay(pdMS_TO_TICKS(150));  // a retained message follows the SUBACK immediately
+    xSemaphoreTake(state_lock, portMAX_DELAY);
+    snprintf(out, size, "%s", ota_command);
+    xSemaphoreGive(state_lock);
+    return out[0] ? 1 : 0;
+}
+
+const char *network_host(void) { return active.host; }
 
 bool network_sleep_allowed(void)
 {
@@ -347,6 +399,67 @@ static void switch_wifi(const settings_t *cfg, bool connect)
     last_reason = 0;
     reconnect_wifi = cfg->ssid[0] != 0 && connect;
     if (reconnect_wifi) esp_wifi_connect();
+}
+
+// The broker is unreachable through the current access point: join the strongest other one.
+static void try_other_ap(void)
+{
+    static wifi_ap_record_t found[16];
+    wifi_ap_record_t current;
+    rtc_missed = 0;
+    if (esp_wifi_sta_get_ap_info(&current) != ESP_OK) return;
+    if (rtc_bad_count >= 4) rtc_bad_count = 0;  // every candidate failed: start over
+    memcpy(rtc_bad[rtc_bad_count++], current.bssid, 6);
+    wifi_scan_config_t scan = { .ssid = (uint8_t *)applied.ssid };
+    uint16_t count = 16;
+    if (esp_wifi_scan_start(&scan, true) != ESP_OK || esp_wifi_scan_get_ap_records(&count, found) != ESP_OK) return;
+    const wifi_ap_record_t *best = NULL;
+    for (int i = 0; i < count; i++) {
+        bool bad = false;
+        for (int j = 0; j < rtc_bad_count; j++) bad |= !memcmp(rtc_bad[j], found[i].bssid, 6);
+        if (!bad && (!best || found[i].rssi > best->rssi)) best = &found[i];
+    }
+    if (!best || going_to_sleep) {
+        printf("NET broker unreachable and no other access point for this Wi-Fi is in range\n");
+        return;
+    }
+    printf("NET broker unreachable through this access point; trying another (channel %u, RSSI %d dBm)\n",
+        best->primary, best->rssi);
+    mqtt_stop();
+    memcpy(rtc_bssid, best->bssid, sizeof(rtc_bssid));
+    rtc_channel = best->primary;
+    rtc_ssid_hash = ssid_hash(applied.ssid);
+    switch_wifi(&applied, true);  // uses the access point just stored as its hint
+}
+
+// Remember the access point the broker answered through, for the next power-on.
+static void save_good_ap(void)
+{
+    wifi_ap_record_t current;
+    good_ap_t good = { .ssid_hash = ssid_hash(applied.ssid) }, saved = {0};
+    size_t size = sizeof(saved);
+    nvs_handle_t handle;
+    if (esp_wifi_sta_get_ap_info(&current) != ESP_OK || nvs_open("clothes_net", NVS_READWRITE, &handle) != ESP_OK) return;
+    good.channel = current.primary;
+    memcpy(good.bssid, current.bssid, sizeof(good.bssid));
+    if (nvs_get_blob(handle, "good_ap", &saved, &size) != ESP_OK || memcmp(&saved, &good, sizeof(good))) {
+        if (nvs_set_blob(handle, "good_ap", &good, sizeof(good)) == ESP_OK) nvs_commit(handle);
+    }
+    nvs_close(handle);
+}
+
+static void load_good_ap(void)
+{
+    good_ap_t saved = {0};
+    size_t size = sizeof(saved);
+    nvs_handle_t handle;
+    if (nvs_open("clothes_net", NVS_READONLY, &handle) != ESP_OK) return;
+    if (nvs_get_blob(handle, "good_ap", &saved, &size) == ESP_OK && size == sizeof(saved) && saved.channel) {
+        memcpy(rtc_bssid, saved.bssid, sizeof(rtc_bssid));
+        rtc_channel = saved.channel;
+        rtc_ssid_hash = saved.ssid_hash;
+    }
+    nvs_close(handle);
 }
 
 static bool wait_bits(EventBits_t required, unsigned seconds)
@@ -687,6 +800,8 @@ static void network_worker(void *arg)
                 xSemaphoreTake(state_lock,portMAX_DELAY); allow_publish=true; xSemaphoreGive(state_lock);
             }
         }
+        if (save_ap_pending && (bits&MQTT_UP)) { save_ap_pending=false; save_good_ap(); }
+        if (rtc_missed>=2 && (bits&WIFI_UP) && !(bits&MQTT_UP) && !ap_open && !testing && !going_to_sleep) try_other_ap();
         if (!ap_open && network_ready() && strcmp(phase,"online")) status_set("online","Wi-Fi 與 MQTT 正常，定時傳送原始資料。");
     }
 }
@@ -746,6 +861,7 @@ void network_setup_init(bool woke_by_button, bool woke_from_sleep)
     ESP_ERROR_CHECK(esp_netif_sntp_init(&sync));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     reconnect_wifi=active.ssid[0]!=0;
+    if (!rtc_channel) load_good_ap();  // power-on: start with the access point that worked last time
     apply_sta_config(&active);
     ESP_ERROR_CHECK(esp_wifi_start());
     assert(xTaskCreate(network_worker,"network_setup",8192,NULL,4,NULL)==pdPASS);
