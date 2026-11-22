@@ -4,7 +4,7 @@
       <div class="hero-inner">
         <div class="page-head">
           <h1>{{ items.length ? `晾衣中 · ${items.length} 件` : '今天的晾衣狀況' }}</h1>
-          <router-link v-if="items.length" to="/start" class="ui-btn ui-btn--primary">開始新一次晾衣</router-link>
+          <router-link v-if="items.length" to="/start" class="ui-btn ui-btn--primary">新增晾衣事件</router-link>
         </div>
         <p v-if="mock.actionError.value || mock.loadError.value" class="ui-note ui-note--error" role="alert">{{ mock.actionError.value || mock.loadError.value }}</p>
 
@@ -33,40 +33,45 @@
           <div class="side">
             <!-- view -->
             <div v-if="panel === 'view'" class="view">
-              <div class="view-top">
-                <span class="meta"><i :style="{ background: cur.garment.color }"></i><DemoTag v-if="cur.session.demo" /><span class="ellipsis">{{ cur.garment.material }} · {{ SHAPES[cur.garment.style].label }} · <router-link :to="`/clips/${cur.clip.id}`" class="clip-link" title="衣夾詳細">{{ cur.clip.name }}</router-link></span></span>
-                <div class="btns">
-                  <button type="button" class="ui-btn" @click="panel = 'swap'">更換衣物</button>
-                  <button type="button" class="ui-btn" @click="editGarment">編輯衣物</button>
-                  <button type="button" class="ui-btn ui-btn--primary" @click="panel = 'end'">結束晾衣</button>
-                </div>
-              </div>
-              <h2 class="name ellipsis" :title="cur.garment.name">{{ cur.garment.name }}</h2>
-              <div>
-                <span class="label">預計乾燥時間</span>
-                <span class="dry">
-                  <span class="dry-time num" :class="{ none: cur.dryTime == null }">{{ cur.dryText }}</span>
-                  <span class="left">{{ cur.leftText || '\u00a0' }}</span>
-                </span>
-              </div>
-              <div class="box-row">
-                <label for="ov-airbox">室內環境來自</label>
-                <AirboxSelect id="ov-airbox" small />
+              <div class="name-row">
+                <h2 class="name ellipsis" :title="cur.garment.name">{{ cur.garment.name }}</h2>
+                <DemoTag v-if="cur.session.demo" />
               </div>
               <div class="tiles">
+                <div class="tile tile--dry">
+                  <span class="tile-main">
+                    <span class="label">預計乾燥時間</span>
+                    <span class="num big">{{ cur.dryText }}</span>
+                  </span>
+                  <button type="button" class="tile-more" aria-label="查看剩餘時間與已晾時間" title="剩餘時間、已晾時間" @click="timeDialog?.showModal()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  </button>
+                </div>
                 <div class="tile">
                   <span class="label">剩餘水分</span>
                   <span v-if="cur.moist != null" class="num big">{{ cur.moist }}<small> %</small></span>
                   <span v-else class="num big muted">NONE</span>
                 </div>
-                <div class="tile"><span class="label">已晾</span><span class="big">{{ cur.elapsedText }}</span></div>
                 <div v-for="t in airTiles" :key="t.label" class="tile">
                   <span class="label">{{ t.label }}</span>
                   <span v-if="t.value != null" class="num big">{{ formatAir(t.value) }}<small> {{ t.unit }}</small></span>
                   <span v-else class="big muted">無數據</span>
                 </div>
               </div>
-              <p class="air-note muted">{{ airNote || '\u00a0' }}</p>
+              <div class="actions">
+                <div ref="moreEl" class="more" :class="{ open: moreOpen }">
+                  <button type="button" class="ui-btn more-btn" aria-haspopup="menu" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen">
+                    更多<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  </button>
+                  <div class="more-menu" role="menu" @click="moreOpen = false">
+                    <button type="button" role="menuitem" @click="swapDialog?.showModal()">更換衣物</button>
+                    <router-link role="menuitem" :to="`/garments/${cur.garment.id}`">衣物資訊</router-link>
+                    <router-link role="menuitem" :to="`/clips/${cur.clip.id}`">衣夾狀況</router-link>
+                    <button type="button" role="menuitem" @click="boxDialog?.showModal()">更換空氣盒子</button>
+                  </div>
+                </div>
+                <button type="button" class="ui-btn ui-btn--primary" @click="panel = 'end'">結束晾衣</button>
+              </div>
               <div class="weather">
                 <svg width="28" height="28" viewBox="0 0 56 56" fill="none" aria-hidden="true"><circle cx="28" cy="28" r="11" :stroke="palette.wa" stroke-width="4" /><path d="M28 6v6M28 44v6M6 28h6M44 28h6M12.4 12.4l4.2 4.2M39.4 39.4l4.2 4.2M12.4 43.6l4.2-4.2M39.4 16.6l4.2-4.2" :stroke="palette.wa" stroke-width="4" stroke-linecap="round" /></svg>
                 <span class="ellipsis">{{ weatherText }}</span>
@@ -87,25 +92,6 @@
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" /><path d="M8 12.5l2.6 2.6L16 9.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
                   <span>目前沒有需要注意的狀況</span>
                 </div>
-              </div>
-            </div>
-
-            <!-- swap -->
-            <div v-else-if="panel === 'swap'" class="card-panel">
-              <h2>更換衣物</h2>
-              <p class="muted-2">這次晾的不是「{{ cur.garment.name }}」？選擇正確的衣物。開始時間和感測資料會保留，預測會依新衣物重新計算，兩件衣物的設定都不會被改動。</p>
-              <div class="library">
-                <button v-for="g in swapChoices" :key="g.id" type="button" class="lib-item"
-                  :class="{ on: g.id === cur.garment.id }" :disabled="g.id !== cur.garment.id && busyGarmentIds.has(g.id)"
-                  :aria-pressed="g.id === cur.garment.id" @click="swapTo(g.id)">
-                  <i :style="{ background: g.color }"></i>
-                  <span class="lib-text"><b class="ellipsis" :title="g.name">{{ g.name }}</b><small>{{ g.material }} · {{ SHAPES[g.style].label }}{{ dryCount(g.id) ? ` · 晾過 ${dryCount(g.id)} 次` : ' · 新衣物' }}</small></span>
-                  <span class="tag">{{ g.id === cur.garment.id ? '目前' : busyGarmentIds.has(g.id) ? '晾衣中' : '' }}</span>
-                </button>
-              </div>
-              <div class="btns">
-                <button type="button" class="ui-btn ui-btn--lg ui-btn--dashed" @click="addNew">＋ 新增衣物</button>
-                <button type="button" class="ui-btn ui-btn--ghost push" @click="closePanel">返回</button>
               </div>
             </div>
 
@@ -141,7 +127,6 @@
                 <span v-else class="big muted">無數據</span>
               </div>
             </div>
-            <p class="air-note muted">{{ airNote || '\u00a0' }}</p>
             <div class="forecast">
               <span class="label">現在晾出，預計乾燥時間</span>
               <div v-for="f in idleForecast" :key="f.material" class="forecast-row"><span>{{ f.material }}</span><strong :class="f.tone">{{ f.text }}</strong></div>
@@ -206,11 +191,63 @@
       <p v-if="mock.demoEnabled.value" class="demo-note">標了「示範」的衣物與晾衣是示範資料，剩餘水分、乾燥曲線與降雨時間為模擬；戶外溫濕度來自氣象署。衣夾-01 的晾衣、衣物與紀錄是實際資料，存在伺服器；它的預計乾燥時間依這件衣物過去的乾燥時間估算，剩餘水分尚未實作。空氣盒子溫濕度為實際資料。可在設定關閉示範資料。</p>
       <p v-else class="demo-note">衣物與晾衣紀錄存在伺服器；預計乾燥時間依這件衣物過去的乾燥時間估算（第一次晾用材質預設值）。空氣盒子與氣象署戶外溫濕度為實際資料；剩餘水分與降雨預測尚未實作。</p>
     </div>
+
+    <dialog ref="timeDialog" class="ov-dialog" aria-labelledby="ov-time-title" @click="onBackdrop">
+      <div v-if="cur" class="ov-dialog-body">
+        <div class="ov-dialog-head">
+          <h2 id="ov-time-title" class="ellipsis" :title="cur.garment.name">{{ cur.garment.name }}</h2>
+          <button type="button" class="ui-btn ui-btn--ghost" aria-label="關閉" @click="timeDialog?.close()">✕</button>
+        </div>
+        <dl class="facts">
+          <div><dt>預計乾燥時間</dt><dd class="num">{{ cur.dryText }}</dd></div>
+          <div><dt>剩餘時間</dt><dd>{{ cur.remainText }}</dd></div>
+          <div><dt>已晾時間</dt><dd>{{ cur.elapsedText }}</dd></div>
+          <div><dt>開始晾衣時間</dt><dd class="num">{{ dayLabel(cur.session.startedAt, mock.now.value) }} {{ clock(cur.session.startedAt) }}</dd></div>
+        </dl>
+      </div>
+    </dialog>
+
+    <dialog ref="swapDialog" class="ov-dialog ov-dialog--wide" aria-labelledby="ov-swap-title" @click="onBackdrop">
+      <div v-if="cur" class="ov-dialog-body">
+        <div class="ov-dialog-head">
+          <h2 id="ov-swap-title">更換衣物</h2>
+          <button type="button" class="ui-btn ui-btn--ghost" aria-label="關閉" @click="swapDialog?.close()">✕</button>
+        </div>
+        <p v-if="mock.actionError.value" class="ui-note ui-note--error" role="alert">{{ mock.actionError.value }}</p>
+        <p class="muted-2">這次晾的不是「{{ cur.garment.name }}」？選擇正確的衣物。開始時間和感測資料會保留，預測會依新衣物重新計算，兩件衣物的設定都不會被改動。</p>
+        <div class="library">
+          <button v-for="g in swapChoices" :key="g.id" type="button" class="lib-item"
+            :class="{ on: g.id === cur.garment.id }" :disabled="g.id !== cur.garment.id && busyGarmentIds.has(g.id)"
+            :aria-pressed="g.id === cur.garment.id" @click="swapTo(g.id)">
+            <i :style="{ background: g.color }"></i>
+            <span class="lib-text"><b class="ellipsis" :title="g.name">{{ g.name }}</b><small>{{ g.material }} · {{ SHAPES[g.style].label }}{{ dryCount(g.id) ? ` · 晾過 ${dryCount(g.id)} 次` : ' · 新衣物' }}</small></span>
+            <span class="tag">{{ g.id === cur.garment.id ? '目前' : busyGarmentIds.has(g.id) ? '晾衣中' : '' }}</span>
+          </button>
+        </div>
+        <div class="btns">
+          <button type="button" class="ui-btn ui-btn--lg ui-btn--dashed" @click="addNew">＋ 新增衣物</button>
+          <button type="button" class="ui-btn ui-btn--ghost push" @click="swapDialog?.close()">返回</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog ref="boxDialog" class="ov-dialog" aria-labelledby="ov-box-title" @click="onBackdrop">
+      <div class="ov-dialog-body">
+        <div class="ov-dialog-head">
+          <h2 id="ov-box-title">更換空氣盒子</h2>
+          <button type="button" class="ui-btn ui-btn--ghost" aria-label="關閉" @click="boxDialog?.close()">✕</button>
+        </div>
+        <div class="ui-field">
+          <label for="ov-airbox">室內溫濕度來自</label>
+          <AirboxSelect id="ov-airbox" />
+        </div>
+      </div>
+    </dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import GarmentFigure from '../components/clothes/GarmentFigure.vue';
 import DryingCurve from '../components/clothes/DryingCurve.vue';
@@ -246,7 +283,7 @@ const items = computed(() => mock.state.sessions.flatMap((session) => {
   return [{
     session, garment, clip, moist, dryTime,
     dryText: done ? '已乾' : clock(dryTime),
-    leftText: done ? '可以收了' : overdue ? '已超過預計時間，請確認' : `還要約 ${minutesText((dryTime - t) / MIN)}`,
+    remainText: done ? '已乾，可以收了' : overdue ? '已超過預計時間，請確認' : `約 ${minutesText((dryTime - t) / MIN)}`,
     elapsedText: minutesText((t - session.startedAt) / MIN),
   }];
 }));
@@ -263,7 +300,7 @@ onMounted(() => {
   }
 });
 
-type Panel = 'view' | 'swap' | 'end';
+type Panel = 'view' | 'end';
 const panel = ref<Panel>('view');
 function go(i: number) {
   // Stops at the first and last garment instead of wrapping around.
@@ -273,17 +310,30 @@ function go(i: number) {
 function closePanel() { panel.value = 'view'; }
 const scrollTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 
-// Garment style, colour and material are edited on the garment page (衣物管理).
 const router = useRouter();
-function editGarment() {
-  if (cur.value) void router.push(`/garments/${cur.value.garment.id}`);
+// 更多: opens on hover (desktop) or tap (touch); a tap anywhere else closes it.
+const moreOpen = ref(false);
+const moreEl = ref<HTMLElement>();
+function onDocClick(event: MouseEvent) {
+  if (moreOpen.value && !moreEl.value?.contains(event.target as Node)) moreOpen.value = false;
+}
+onMounted(() => document.addEventListener('click', onDocClick));
+onBeforeUnmount(() => document.removeEventListener('click', onDocClick));
+watch(() => cur.value?.session.id, () => { moreOpen.value = false; });
+const timeDialog = ref<HTMLDialogElement>();
+const boxDialog = ref<HTMLDialogElement>();
+const swapDialog = ref<HTMLDialogElement>();
+// A click on the backdrop lands on the <dialog> element itself.
+function onBackdrop(event: MouseEvent) {
+  const el = event.target;
+  if (el instanceof HTMLDialogElement) el.close();
 }
 // Only garments of the same kind (real or demo) as this session can be swapped in.
 const swapChoices = computed(() => cur.value ? mock.state.garments.filter((g) => g.demo === cur.value!.session.demo) : []);
 async function swapTo(garmentId: string) {
   if (!cur.value) return;
   if (garmentId !== cur.value.garment.id && !await mock.swapGarment(cur.value.session.id, garmentId)) return;
-  closePanel();
+  swapDialog.value?.close();
 }
 async function addNew() {
   if (!cur.value) return;
@@ -325,11 +375,6 @@ const airTiles = computed(() => [
   { label: '室內溫度', value: shownAir.value?.temp ?? null, unit: '°C' },
   { label: '室內濕度', value: shownAir.value?.humi ?? null, unit: '%' },
 ]);
-const airNote = computed(() => {
-  if (shownAir.value?.stale) return '空氣盒子超過 5 分鐘未更新';
-  if (air.value && air.value.age_ms != null && !shownAir.value) return '空氣盒子超過 1 小時沒有更新';
-  return '';
-});
 
 
 // ----- idle state
@@ -380,36 +425,54 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 .dots span { display: block; width: 8px; height: 8px; border-radius: 4px; background: var(--bd2); transition: width 0.3s; }
 .dots span.on { width: 28px; background: var(--ac); }
 
-.side { flex: 1 1 420px; min-width: 0; }
-.view { display: flex; flex-direction: column; gap: 24px; }
-/* One row: the buttons keep their size, the meta text gives way. */
-.view-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.view-top .btns { flex: 0 0 auto; flex-wrap: nowrap; }
-.meta { display: inline-flex; align-items: center; gap: 10px; min-width: 0; color: var(--tx2); }
-.meta i { flex: 0 0 auto; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--bd2); }
+.side { flex: 1 1 420px; min-width: 0; align-self: flex-start; }  /* top-aligned, not centred */
+.view { display: flex; flex-direction: column; gap: 32px; }
+.actions { display: flex; align-items: center; gap: 12px; }
+.more { position: relative; }
+.more-btn { gap: 6px; }
+.more-btn svg { transition: transform 0.2s; }
+/* padding-top bridges the gap so the pointer can move onto the menu without it closing. */
+.more-menu { position: absolute; top: 100%; left: 0; z-index: 20; min-width: 100%; padding-top: 6px; display: none; }
+.more.open .more-menu { display: flex; flex-direction: column; }
+.more.open .more-btn svg { transform: rotate(180deg); }
+/* Touch screens keep :hover after a tap, so hover-to-open is only for a real pointer. */
+@media (hover: hover) {
+  .more:hover .more-menu { display: flex; flex-direction: column; }
+  .more:hover .more-btn svg { transform: rotate(180deg); }
+}
+.more-menu > * { display: flex; align-items: center; min-height: 44px; padding: 0 18px; white-space: nowrap; font: inherit; color: var(--tx); text-align: left; text-decoration: none;
+  background: var(--sf); border: 1px solid var(--bd2); border-top-width: 0; cursor: pointer; }
+.more-menu > :first-child { border-top-width: 1px; border-radius: 10px 10px 0 0; }
+.more-menu > :last-child { border-radius: 0 0 10px 10px; }
+.more-menu > :hover, .more-menu > :focus-visible { background: var(--sf2); }
+.name-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btns { display: flex; flex-wrap: wrap; gap: 8px 10px; }
 .push { margin-left: auto; }
-.clip-link { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
-.clip-link:hover { color: var(--tx); }
 .name { font-size: 3rem; font-weight: 900; line-height: 1.15; }
 .label { display: block; font-size: 0.9375rem; color: var(--mu); }
-.view > div > .label { font-size: 1.0625rem; }
-/* Every slot below keeps one line and a fixed line height whatever the data is, so switching
+/* Every tile keeps one line and a fixed line height whatever the data is, so switching
    garments never moves the layout (NONE / 無數據 use the same size as real values). */
-.dry { display: flex; align-items: baseline; gap: 8px 16px; min-width: 0; }
-.dry-time { flex: 0 0 auto; font-size: 5.5rem; font-weight: 700; line-height: 1; white-space: nowrap; color: var(--ac-tx); }
-.dry-time.none { color: var(--mu); }
-.left { min-width: 0; font-size: 1.375rem; line-height: 1.3; color: var(--tx2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.box-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.box-row label { font-size: 0.9375rem; color: var(--mu); }
+.tile--dry { display: flex; align-items: center; gap: 8px; }
+.tile-main { flex: 1; min-width: 0; }
+.tile-more { flex: 0 0 auto; width: 44px; height: 44px; margin-right: -8px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--tx2); cursor: pointer; }
+.tile-more:hover { background: var(--bg); color: var(--tx); }
+.ov-dialog { width: min(440px, calc(100vw - 32px)); margin: auto; padding: 0; border: 1px solid var(--bd2); border-radius: 20px; background: var(--sf); color: var(--tx); }
+.ov-dialog--wide { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+.ov-dialog::backdrop { background: rgb(0 0 0 / 0.6); }
+.ov-dialog-body { display: flex; flex-direction: column; gap: 20px; padding: 24px; }
+.ov-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ov-dialog-head h2 { font-size: 1.375rem; }
+.facts { display: flex; flex-direction: column; gap: 12px; margin: 0; }
+.facts div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 14px 16px; border-radius: 12px; background: var(--sf2); }
+.facts dt { color: var(--mu); }
+.facts dd { margin: 0; font-size: 1.25rem; font-weight: 700; text-align: right; }
 .no-curve { height: 320px; box-sizing: border-box; overflow: hidden; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 24px; border-radius: 14px; border: 1px dashed var(--bd2); color: var(--tx2); }
 .no-curve p { flex: 1 1 360px; }
-.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: -12px; }
-.tile { padding: 18px 20px; border-radius: 14px; background: var(--sf2); }
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.tile { padding: 22px 24px; border-radius: 14px; background: var(--sf2); }
 .big { display: block; font-size: 2rem; font-weight: 700; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .big small { font-size: 1.125rem; color: var(--mu); }
-.air-note { margin-top: -16px; font-size: 0.875rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .weather { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--tx2); }
 .weather .ellipsis { flex: 1; min-width: 0; }
 .weather-select { max-width: 8rem; border: 1px solid var(--bd2); border-radius: 6px; background: var(--sf2); color: var(--tx); padding: 6px 8px; font: inherit; }
@@ -494,18 +557,13 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
   .track-wrap :deep(.garment) { width: auto; max-width: 100%; height: 100%; aspect-ratio: 300 / 370; }
   .dots { flex: 0 0 auto; margin-top: 0; }
   .dots button { height: 36px; }
-  .side { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
-  .side > * { margin-block: auto; }  /* centred when it fits, scrolls from the top when not */
-  .view { gap: clamp(8px, 1.8vh, 24px); }
-  .view-top .ui-btn { min-height: clamp(36px, 5vh, 44px); }
+  .side { align-self: stretch; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }  /* full height so tall panels scroll inside */
+  .view { gap: clamp(12px, 3vh, 36px); }
+  .actions .ui-btn { min-height: clamp(36px, 5vh, 44px); }
   .name { font-size: clamp(1.75rem, 4.6vh, 3rem); }
-  .dry-time { font-size: clamp(2.5rem, 7.5vh, 5.5rem); }
-  .left { font-size: clamp(1rem, 2.4vh, 1.375rem); }
-  .view > div > .label { font-size: clamp(0.875rem, 2vh, 1.0625rem); }
-  .tiles { margin-top: 0; gap: clamp(8px, 1.4vh, 12px); }
-  .tile { padding: clamp(6px, 1.4vh, 18px) 20px; }
+  .tiles { gap: clamp(10px, 1.8vh, 16px); }
+  .tile { padding: clamp(10px, 2vh, 22px) 24px; }
   .big { font-size: clamp(1.375rem, 3.4vh, 2rem); }
-  .air-note { margin-top: calc(-0.5 * clamp(8px, 1.8vh, 24px)); }
   .alert-slot { height: clamp(56px, 7vh, 92px); }
   .alert { padding: 6px 20px; }
   .card-panel { padding: clamp(16px, 2.6vh, 28px); gap: clamp(10px, 2vh, 20px); }
@@ -515,10 +573,8 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 
 /* Short laptop screens: tighter still, so a two-line alert fits too. */
 @media (min-width: 901px) and (min-height: 600px) and (max-height: 780px) {
-  .view { gap: clamp(6px, 1.1vh, 8px); }
-  .dry-time { font-size: clamp(2.25rem, 6vh, 3rem); }
-  .tile { padding: clamp(4px, 0.8vh, 6px) 16px; }
-  .air-note { margin-top: -4px; font-size: 0.8125rem; }
+  .view { gap: clamp(10px, 2vh, 16px); }
+  .tile { padding: clamp(8px, 1.4vh, 12px) 20px; }
   .alert { font-size: 0.9375rem; line-height: 1.35; }
 }
 
@@ -529,12 +585,8 @@ const availableClips = computed(() => mock.devices.value.filter((d) => !mock.act
 
 @media (max-width: 640px) {
   .hero-inner { padding: 28px 16px 16px; }
-  .view-top { flex-wrap: wrap; }
-  .meta { flex: 1 1 100%; }
   .stage { min-height: 0; gap: 24px; }
   .name { font-size: 2.25rem; }
-  .dry-time { font-size: 4rem; }
-  .dry { flex-direction: column; align-items: flex-start; gap: 4px; }
   .idle-title { font-size: 1.75rem; }
   .nav-btn { width: 44px; height: 44px; }
 }
